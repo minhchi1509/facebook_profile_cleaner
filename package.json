@@ -1,7 +1,7 @@
 {
   "name": "@minhchi1509/facebook-profile-cleaner",
   "description": "Clean your Facebook profile by removing all posts, comments, likes, and reactions, following, sent friend requests, and more...",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "./dist/main.js",
   "module": "./dist/main.mjs",
   "types": "./dist/main.d.ts",
