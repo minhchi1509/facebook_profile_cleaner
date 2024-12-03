@@ -1,5 +1,5 @@
 <div align="center">
-    <img src="https://raw.githubusercontent.com/minhchi1509/facebook_cleaner/main/public/facebook-logo.svg" width="10%" />
+    <img src="https://raw.githubusercontent.com/minhchi1509/facebook_profile_cleaner/main/public/facebook-logo.svg" width="10%" />
     <br />
      <h1 align="center">Facebook Profile Cleaner</h1>
 </div>
