@@ -22,6 +22,6 @@
       "src/*": ["./src/*"]
     }
   },
-  "include": ["src/**/*", "rollup.config.ts"],
+  "include": ["src/**/*", "esbuild.config.ts"],
   "exclude": ["node_modules", "dist"]
 }

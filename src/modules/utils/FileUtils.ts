@@ -49,7 +49,7 @@ class FileUtils {
     return new Promise((resolve, reject) => {
       write(data, { headers: includeHeader })
         .pipe(writeStream)
-        .on("finish", resolve)
+        .on("finish", () => resolve(undefined))
         .on("error", reject);
     });
   };
