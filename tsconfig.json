@@ -1,12 +1,12 @@
 {
   "compilerOptions": {
     "strict": true,
-    "module": "CommonJS",
-    "moduleResolution": "Node",
-    "declaration": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "declaration": false,
     "allowJs": true,
-    "target": "ES2021",
-    "sourceMap": true,
+    "target": "es2015",
+    "sourceMap": false,
     "outDir": "./dist",
     "noFallthroughCasesInSwitch": true,
     "resolveJsonModule": true,
@@ -22,6 +22,6 @@
       "src/*": ["./src/*"]
     }
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "rollup.config.ts"],
   "exclude": ["node_modules", "dist"]
 }

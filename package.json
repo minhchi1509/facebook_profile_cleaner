@@ -1,19 +1,28 @@
 {
   "name": "@minhchi1509/facebook-profile-cleaner",
   "description": "Clean your Facebook profile by removing all posts, comments, likes, and reactions, following, sent friend requests, and more...",
-  "version": "1.0.1",
-  "main": "./dist/main.js",
-  "module": "./dist/main.mjs",
-  "types": "./dist/main.d.ts",
+  "version": "1.1.2",
+  "main": "dist/index.cjs",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsup",
-    "publish:patch": "npm run build && npm version patch && npm publish --access public",
-    "publish:minor": "npm run build && npm version minor && npm publish --access public",
-    "publish:major": "npm run build && npm version major && npm publish --access public"
+    "build": "rm -rf dist && rollup -c rollup.config.ts --configPlugin typescript && npm run build:dts-export",
+    "build:dts": "rollup -c rollup.dts.mjs",
+    "build:dts-export": "dts-bundle-generator -o dist/index.d.ts src/main.ts",
+    "publish:patch": "npm run build && npm version patch --no-git-tag-version && npm publish --access public",
+    "publish:minor": "npm run build && npm version minor --no-git-tag-version && npm publish --access public",
+    "publish:major": "npm run build && npm version major --no-git-tag-version && npm publish --access public"
   },
   "devDependencies": {
+    "@rollup/plugin-commonjs": "^28.0.8",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^16.0.3",
+    "@rollup/plugin-typescript": "^12.3.0",
+    "dts-bundle-generator": "^9.5.1",
+    "rollup": "^4.52.5",
+    "rollup-plugin-dts": "^6.2.3",
+    "rollup-plugin-typescript-paths": "^1.5.0",
     "tsc-alias": "^1.8.10",
-    "tsup": "^8.3.5",
     "typescript": "^5.7.2"
   },
   "dependencies": {
