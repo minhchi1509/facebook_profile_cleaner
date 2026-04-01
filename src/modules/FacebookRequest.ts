@@ -63,7 +63,7 @@ class FacebookRequest {
     }
   };
 
-  private getProfileTabKey = async (
+  getProfileTabKey = async (
     profileCredentials: IProfileCredentials,
   ): Promise<IProfileTabKey> => {
     try {

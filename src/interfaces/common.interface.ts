@@ -19,5 +19,5 @@ export interface IRequestOptions {
 export interface IGetListRequestOptions {
   cursor: string;
   profileCredentials?: IProfileCredentials;
-  profileTabKey: IProfileTabKey;
+  profileTabKey?: IProfileTabKey;
 }
