@@ -1,951 +1,993 @@
 import axios, { AxiosError, AxiosInstance } from "axios";
 import {
-  ICachedCursor,
+  IGetListRequestOptions,
+  IGetListResponse,
+  IRequestOptions,
+} from "src/interfaces/common.interface";
+import {
   ICommentData,
-  ICurrentUserToken,
+  IProfileCredentials,
   IFollowing,
   IFriend,
   IJoinedGroups,
   ILikedPages,
   IReactionData,
   ISentFriendRequest,
-} from "src/interfaces";
-import CacheCursor from "src/modules/utils/CacheCursor";
-import FileUtils from "src/modules/utils/FileUtils";
-import PathUtils from "src/modules/utils/PathUtils";
+  IProfileTabKey,
+} from "src/interfaces/model.interface";
+import ObjectUtils from "src/modules/utils/ObjectUtils";
 
 class FacebookRequest {
   private axiosInstance: AxiosInstance;
+  private requestOptions: IRequestOptions;
 
-  constructor(cookies: string) {
+  constructor(cookies: string, requestOptions?: IRequestOptions) {
     this.axiosInstance = axios.create({
       baseURL: "https://www.facebook.com/api/graphql",
       headers: { cookie: cookies },
     });
+    this.requestOptions = {
+      retryCount: requestOptions?.retryCount ?? 5,
+      retryDelayInMs: requestOptions?.retryDelayInMs ?? 1000,
+    };
     this.axiosInstance.interceptors.response.use(
       (res) => res,
       (error: AxiosError) => {
         if (error.response) {
           const responseData = error.response.data;
           throw new Error(
-            `❌ Error when making request to Instagram: ${JSON.stringify(
+            `❌ Error when making request to Facebook: ${JSON.stringify(
               responseData,
               null,
-              2
-            )}`
+              2,
+            )}`,
           );
         }
         throw new Error(`❌ Unknown error: ${error.message}`);
-      }
+      },
     );
   }
 
-  getCurrentUserToken = async () => {
+  getProfileCredentials = async () => {
     try {
       const { data } = await this.axiosInstance.get(
-        "https://www.facebook.com/"
+        "https://www.facebook.com/",
       );
       const userId = data.match(/"userId":(\d+)/)[1];
       const fbDtsg = data.match(/"DTSGInitialData".*?"token":"(.*?)"/)[1];
       return { userId, fbDtsg };
     } catch (error) {
       throw new Error(
-        "❌ Error when getting your Facebook token: Invalid cookie"
+        "❌ Error when getting your Facebook token: Invalid cookie",
       );
     }
   };
 
-  private makeRequestToFacebook = async (
-    userToken: ICurrentUserToken,
-    docID: string,
-    query: any
-  ) => {
+  private getProfileTabKey = async (
+    profileCredentials: IProfileCredentials,
+  ): Promise<IProfileTabKey> => {
+    try {
+      const docID = "26299170229717540";
+      const query = {
+        scale: 1,
+        selectedID: profileCredentials.userId,
+        selectedSpaceType: "profile",
+        shouldUseFXIMProfilePicEditor: false,
+        userID: profileCredentials.userId,
+      };
+      const headers = {
+        "x-fb-friendly-name": "ProfileCometHeaderQuery",
+      };
+      const responseTextData = await this.makeRequestToFacebook({
+        docID,
+        query,
+        profileCredentials,
+        headers,
+      });
+
+      if (typeof responseTextData !== "string") {
+        throw new Error();
+      }
+      const originalData = JSON.parse(
+        responseTextData.split("\n")?.[0] ?? "null",
+      );
+
+      const findTabIdByKey = (key: string): string => {
+        return (
+          ObjectUtils.findByKey<string>({
+            data: originalData,
+            key: "id",
+            condition: (candidate, container): candidate is string => {
+              return typeof candidate === "string" && container.tab_key === key;
+            },
+          }) || ""
+        );
+      };
+
+      const friendsAllTabKeyId = findTabIdByKey("friends_all");
+      const followingTabKeyId = findTabIdByKey("following");
+
+      return { friendsAllTabKeyId, followingTabKeyId };
+    } catch (error) {
+      throw new Error(
+        "❌ Error when getting profile tab key: " +
+          (error instanceof Error ? error.message : "Unknown error"),
+      );
+    }
+  };
+
+  private makeRequestToFacebook = async ({
+    docID,
+    query,
+    profileCredentials,
+    headers,
+  }: {
+    profileCredentials: IProfileCredentials;
+    docID: string;
+    query: any;
+    headers?: Record<string, string>;
+  }) => {
     const formData = new FormData();
-    formData.set("fb_dtsg", userToken.fbDtsg);
-    formData.set("av", userToken.userId);
+    formData.set("__a", "1");
+    formData.set("__comet_req", "15");
+    formData.set("fb_dtsg", profileCredentials.fbDtsg);
+    formData.set("av", profileCredentials.userId);
     formData.set("doc_id", docID);
     formData.set("variables", JSON.stringify(query));
-    const { data } = await this.axiosInstance.post("/", formData);
+    const { data } = await this.axiosInstance.post("/", formData, { headers });
     return data;
   };
 
-  getAllLikedPages = async (writeToCSV: boolean = false) => {
-    const userToken = await this.getCurrentUserToken();
-    const allLikedPages: ILikedPages[] = [];
-    console.log("🚀 Start getting liked pages...");
-    const baseQuery = {
+  getFollowedPages = async ({
+    cursor,
+    profileCredentials,
+  }: IGetListRequestOptions): Promise<IGetListResponse<ILikedPages>> => {
+    const credentials =
+      profileCredentials || (await this.getProfileCredentials());
+    const query = {
       ranking_model: "INTEGRITY_SIGNALS",
       scale: 1,
-      id: userToken.userId,
+      id: profileCredentials?.userId || credentials.userId,
       __relay_internal__pv__StoriesRingrelayprovider: false,
+      count: 20,
+      ...(cursor && { cursor }),
+    };
+    const docID = "29841836082128490";
+    const headers = {
+      "x-fb-friendly-name": "PagesCometAllLikedPagesSectionPaginationQuery",
     };
 
-    let hasNextPage = false;
-    let endCursor = "";
-    do {
-      const docID = "8407760875943054";
-      const query = {
-        ...baseQuery,
-        ...(allLikedPages.length && { count: 20, cursor: endCursor }),
-      };
+    const responseData = await this.makeRequestToFacebook({
+      profileCredentials: credentials,
+      docID,
+      query,
+      headers,
+    });
 
-      const responseData = await this.makeRequestToFacebook(
-        userToken,
-        docID,
-        query
+    const originalLikedPagesList =
+      responseData?.data?.node?.sorted_liked_and_followed_pages?.edges;
+    const pageInfor =
+      responseData?.data?.node?.sorted_liked_and_followed_pages?.page_info;
+    if (!originalLikedPagesList || !pageInfor) {
+      throw new Error(
+        "❌ Error when getting liked pages: Response data is missing expected fields.",
       );
+    }
 
-      const originalLikedPagesList =
-        responseData?.data?.node?.sorted_liked_and_followed_pages?.edges;
-      const pageInfor =
-        responseData?.data?.node?.sorted_liked_and_followed_pages?.page_info;
-      if (!originalLikedPagesList || !pageInfor) {
-        console.log("😐 There are some errors. Start retrying...");
-        continue;
-      }
-
-      const likedPages = originalLikedPagesList.map(({ node }: any) => ({
+    const likedPages: ILikedPages[] = originalLikedPagesList.map(
+      ({ node }: any) => ({
         id: node.id,
         name: node.name,
         url: node.url,
-      }));
-      allLikedPages.push(...likedPages);
-      console.log(`🔥 Got ${allLikedPages.length} liked pages...`);
-      hasNextPage = pageInfor.has_next_page;
-      endCursor = pageInfor.end_cursor;
-    } while (hasNextPage);
-    console.log(
-      `✅ Get all liked pages successfully. Total: ${allLikedPages.length}`
+      }),
     );
-    if (writeToCSV && allLikedPages.length) {
-      const { LIKED_PAGES } = PathUtils.getSavedProfileStatisticsDirPath(
-        userToken.userId
-      );
-      await FileUtils.writeCSV(
-        LIKED_PAGES,
-        allLikedPages.map((page, index) => ({
-          ordinal_number: index + 1,
-          ...page,
-        }))
-      );
-    }
-    return allLikedPages;
+    const hasNextPage = pageInfor.has_next_page;
+    const nextCursor = pageInfor.end_cursor;
+    return {
+      data: likedPages,
+      pagination: {
+        hasMore: hasNextPage,
+        nextCursor,
+      },
+    };
   };
 
-  getAllFriends = async (writeToCSV: boolean = false) => {
-    const userToken = await this.getCurrentUserToken();
-    const allFriends: IFriend[] = [];
-    console.log("🚀 Start getting friends...");
-    const baseQuery = {
+  getFriends = async ({
+    cursor,
+    profileCredentials,
+    profileTabKey,
+  }: IGetListRequestOptions): Promise<IGetListResponse<IFriend>> => {
+    const credentials =
+      profileCredentials || (await this.getProfileCredentials());
+    const tabKey = profileTabKey || (await this.getProfileTabKey(credentials));
+
+    const query = {
+      count: 8,
       scale: 1,
+      search: null,
+      id: tabKey.friendsAllTabKeyId,
+      __relay_internal__pv__FBProfile_enable_perf_improv_gkrelayprovider: true,
+      ...(cursor && { cursor }),
     };
-    let hasNextPage = false;
-    let endCursor = "";
-    do {
-      const docID = "27405320069114034";
-      const query = {
-        ...baseQuery,
-        ...(allFriends.length && { count: 30, cursor: endCursor }),
-      };
+    const docID = "27075075378761750";
+    const headers = {
+      "x-fb-friendly-name":
+        "ProfileCometAppCollectionSelfFriendsListRendererPaginationQuery",
+    };
+    const responseData = await this.makeRequestToFacebook({
+      profileCredentials: credentials,
+      docID,
+      query,
+      headers,
+    });
 
-      const responseData = await this.makeRequestToFacebook(
-        userToken,
-        docID,
-        query
-      );
-
-      const originalFriendsList = responseData?.data?.viewer?.all_friends.edges;
-      const pageInfor = responseData?.data?.viewer?.all_friends?.page_info;
-      if (!originalFriendsList || !pageInfor) {
-        console.log("😐 There are some errors. Start retrying...");
-        continue;
-      }
-
-      const friends = originalFriendsList.map(({ node }: any) => ({
-        id: node.id,
-        name: node.name,
-        url: node.url,
-      }));
-
-      allFriends.push(...friends);
-      console.log(`🔥 Got ${allFriends.length} friends...`);
-      hasNextPage = pageInfor.has_next_page;
-      endCursor = pageInfor.end_cursor;
-    } while (hasNextPage);
-    console.log(`✅ Get all friends successfully. Total: ${allFriends.length}`);
-    if (writeToCSV && allFriends.length) {
-      const { FRIENDS } = PathUtils.getSavedProfileStatisticsDirPath(
-        userToken.userId
-      );
-      await FileUtils.writeCSV(
-        FRIENDS,
-        allFriends.map((friend, index) => ({
-          ordinal_number: index + 1,
-          ...friend,
-        }))
+    const originalFriendsList = responseData?.data?.node?.pageItems?.edges;
+    const pageInfor = responseData?.data?.node?.pageItems?.page_info;
+    if (!originalFriendsList || !pageInfor) {
+      throw new Error(
+        "❌ Error when getting friends: Response data is missing expected fields.",
       );
     }
-    return allFriends;
+
+    const friends: IFriend[] = originalFriendsList.map(({ node }: any) => ({
+      id: node.actions_renderer.action.profile_owner.id,
+      name: node.actions_renderer.action.profile_owner.name,
+      url: node.url,
+    }));
+
+    const hasMore = pageInfor.has_next_page;
+    const nextCursor = pageInfor.end_cursor;
+    return {
+      data: friends,
+      pagination: {
+        hasMore,
+        nextCursor,
+      },
+    };
   };
 
-  getAllFollowing = async (writeToCSV: boolean = false) => {
-    const userToken = await this.getCurrentUserToken();
-    const allFollowings: IFollowing[] = [];
-    console.log("🚀 Start getting following...");
-    const baseQuery = {
+  getFollowing = async ({
+    cursor,
+    profileCredentials,
+    profileTabKey,
+  }: IGetListRequestOptions): Promise<IGetListResponse<IFollowing>> => {
+    const credentials =
+      profileCredentials || (await this.getProfileCredentials());
+    const tabKey = profileTabKey || (await this.getProfileTabKey(credentials));
+
+    const query = {
+      id: tabKey.followingTabKeyId,
+      count: 8,
       scale: 1,
-      id: btoa(`app_collection:${userToken.userId}:2356318349:33`),
+      search: null,
+      __relay_internal__pv__FBProfile_enable_perf_improv_gkrelayprovider: true,
+      ...(cursor && { cursor }),
     };
-    let hasNextPage = false;
-    let endCursor = "";
-    do {
-      const docID = "8512257125510319";
-      const query = {
-        ...baseQuery,
-        ...(allFollowings.length && { count: 8, cursor: endCursor }),
-      };
+    const docID = "26138331632454030";
+    const headers = {
+      "x-fb-friendly-name":
+        "ProfileCometAppCollectionListRendererPaginationQuery",
+    };
+    const responseData = await this.makeRequestToFacebook({
+      profileCredentials: credentials,
+      docID,
+      query,
+      headers,
+    });
 
-      const responseData = await this.makeRequestToFacebook(
-        userToken,
-        docID,
-        query
+    const originalFollowingList = responseData?.data?.node?.pageItems?.edges;
+    const pageInfor = responseData?.data?.node?.pageItems?.page_info;
+    if (!originalFollowingList || !pageInfor) {
+      throw new Error(
+        "❌ Error when getting following: Response data is missing expected fields.",
       );
+    }
 
-      const originalFollowingList = responseData?.data?.node?.pageItems?.edges;
-      const pageInfor = responseData?.data?.node?.pageItems?.page_info;
-      if (!originalFollowingList || !pageInfor) {
-        console.log("😐 There are some errors. Start retrying...");
-        continue;
-      }
-
-      const following = originalFollowingList.map(({ node }: any) => ({
+    const following: IFollowing[] = originalFollowingList.map(
+      ({ node }: any) => ({
         id: node.node.id,
         name: node.title.text,
-        url: node.url,
-      }));
-
-      allFollowings.push(...following);
-      console.log(`🔥 Got ${allFollowings.length} following...`);
-      hasNextPage = pageInfor.has_next_page;
-      endCursor = pageInfor.end_cursor;
-    } while (hasNextPage);
-    console.log(
-      `✅ Get all following successfully. Total: ${allFollowings.length}`
+        url: node.node.url,
+      }),
     );
-    if (writeToCSV && allFollowings.length) {
-      const { FOLLOWING } = PathUtils.getSavedProfileStatisticsDirPath(
-        userToken.userId
-      );
-      await FileUtils.writeCSV(
-        FOLLOWING,
-        allFollowings.map((following, index) => ({
-          ordinal_number: index + 1,
-          ...following,
-        }))
-      );
-    }
-    return allFollowings;
+    const hasMore = pageInfor.has_next_page;
+    const nextCursor = pageInfor.end_cursor;
+
+    return {
+      data: following,
+      pagination: {
+        hasMore,
+        nextCursor,
+      },
+    };
   };
 
-  getAllJoinedGroups = async (writeToCSV: boolean = false) => {
-    const userToken = await this.getCurrentUserToken();
-    const allJoinedGroups: IJoinedGroups[] = [];
-    console.log("🚀 Start getting joined groups...");
-    const baseQuery = {
+  getJoinedGroups = async ({
+    cursor,
+    profileCredentials,
+  }: IGetListRequestOptions): Promise<IGetListResponse<IJoinedGroups>> => {
+    const credentials =
+      profileCredentials || (await this.getProfileCredentials());
+    const query = {
       ordering: ["integrity_signals"],
       scale: 1,
+      count: 20,
+      ...(cursor && { cursor }),
+    };
+    const docID = "9974006939348139";
+    const headers = {
+      "x-fb-friendly-name": "GroupsCometAllJoinedGroupsSectionPaginationQuery",
     };
 
-    let hasNextPage = false;
-    let endCursor = "";
-    do {
-      const docID = "6009728632468556";
-      const query = {
-        ...baseQuery,
-        ...(allJoinedGroups.length && { count: 20, cursor: endCursor }),
-      };
+    const responseData = await this.makeRequestToFacebook({
+      profileCredentials: credentials,
+      docID,
+      query,
+      headers,
+    });
 
-      const responseData = await this.makeRequestToFacebook(
-        userToken,
-        docID,
-        query
+    const originalJoinedGroupsList =
+      responseData?.data?.viewer?.all_joined_groups?.tab_groups_list?.edges;
+    const pageInfor =
+      responseData?.data?.viewer?.all_joined_groups?.tab_groups_list?.page_info;
+    if (!originalJoinedGroupsList || !pageInfor) {
+      throw new Error(
+        "❌ Error when getting joined groups: Response data is missing expected fields.",
       );
+    }
 
-      const originalJoinedGroupsList =
-        responseData?.data?.viewer?.all_joined_groups?.tab_groups_list?.edges;
-      const pageInfor =
-        responseData?.data?.viewer?.all_joined_groups?.tab_groups_list
-          ?.page_info;
-      if (!originalJoinedGroupsList || !pageInfor) {
-        console.log("😐 There are some errors. Start retrying...");
-        continue;
-      }
+    const joinedGroups: IJoinedGroups[] = originalJoinedGroupsList.map(
+      ({ node }: any) => ({
+        id: node.id,
+        name: node.name,
+        url: node.url,
+      }),
+    );
+    const hasMore = pageInfor.has_next_page;
+    const nextCursor = pageInfor.end_cursor;
+    return {
+      data: joinedGroups,
+      pagination: {
+        hasMore,
+        nextCursor,
+      },
+    };
+  };
 
-      const joinedGroups = originalJoinedGroupsList.map(({ node }: any) => ({
+  getSentFriendRequests = async ({
+    cursor,
+    profileCredentials,
+  }: IGetListRequestOptions): Promise<IGetListResponse<ISentFriendRequest>> => {
+    const credentials =
+      profileCredentials || (await this.getProfileCredentials());
+
+    const query = {
+      scale: 1,
+      count: 10,
+      ...(cursor && { cursor }),
+    };
+    const docID = "9776114965832879";
+    const headers = {
+      "x-fb-friendly-name":
+        "FriendingCometOutgoingRequestsDialogPaginationQuery",
+    };
+
+    const responseData = await this.makeRequestToFacebook({
+      profileCredentials: credentials,
+      docID,
+      query,
+      headers,
+    });
+
+    const originalSentFriendRequests =
+      responseData?.data?.viewer?.outgoing_friend_requests_connection?.edges;
+    const pageInfor =
+      responseData?.data?.viewer?.outgoing_friend_requests_connection
+        ?.page_info;
+    if (!originalSentFriendRequests || !pageInfor) {
+      throw new Error(
+        "❌ Error when getting sent friend requests: Response data is missing expected fields.",
+      );
+    }
+
+    const sentFriendRequests: ISentFriendRequest[] =
+      originalSentFriendRequests.map(({ node }: any) => ({
         id: node.id,
         name: node.name,
         url: node.url,
       }));
-      allJoinedGroups.push(...joinedGroups);
-      console.log(`🔥 Got ${allJoinedGroups.length} joined groups...`);
-      hasNextPage = pageInfor.has_next_page;
-      endCursor = pageInfor.end_cursor;
-    } while (hasNextPage);
-    console.log(
-      `✅ Get all joined groups successfully. Total: ${allJoinedGroups.length}`
-    );
-    if (writeToCSV && allJoinedGroups.length) {
-      const { JOINED_GROUPS } = PathUtils.getSavedProfileStatisticsDirPath(
-        userToken.userId
-      );
-      await FileUtils.writeCSV(
-        JOINED_GROUPS,
-        allJoinedGroups.map((group, index) => ({
-          ordinal_number: index + 1,
-          ...group,
-        }))
-      );
-    }
-    return allJoinedGroups;
-  };
-
-  getAllSentFriendRequests = async (writeToCSV: boolean = false) => {
-    const userToken = await this.getCurrentUserToken();
-    const allSentFriendRequests: ISentFriendRequest[] = [];
-    console.log("🚀 Start getting sent friend requests...");
-    const baseQuery = {
-      scale: 1,
+    const hasMore = pageInfor.has_next_page;
+    const nextCursor = pageInfor.end_cursor;
+    return {
+      data: sentFriendRequests,
+      pagination: {
+        hasMore,
+        nextCursor,
+      },
     };
-
-    let hasNextPage = false;
-    let endCursor = "";
-    do {
-      const docID = "4420916318007844";
-      const query = {
-        ...baseQuery,
-        ...(allSentFriendRequests.length && { count: 10, cursor: endCursor }),
-      };
-
-      const responseData = await this.makeRequestToFacebook(
-        userToken,
-        docID,
-        query
-      );
-
-      const originalSentFriendRequests =
-        responseData?.data?.viewer?.outgoing_friend_requests_connection?.edges;
-      const pageInfor =
-        responseData?.data?.viewer?.outgoing_friend_requests_connection
-          ?.page_info;
-      if (!originalSentFriendRequests || !pageInfor) {
-        console.log("😐 There are some errors. Start retrying...");
-        continue;
-      }
-
-      const sentFriendRequests = originalSentFriendRequests.map(
-        ({ node }: any) => ({
-          id: node.id,
-          name: node.name,
-          url: node.url,
-        })
-      );
-      allSentFriendRequests.push(...sentFriendRequests);
-      console.log(
-        `🔥 Got ${allSentFriendRequests.length} sent friend requests...`
-      );
-      hasNextPage = pageInfor.has_next_page;
-      endCursor = pageInfor.end_cursor;
-    } while (hasNextPage);
-    console.log(
-      `✅ Get all sent friend requests successfully. Total: ${allSentFriendRequests.length}`
-    );
-    if (writeToCSV && allSentFriendRequests.length) {
-      const { SENT_FRIEND_REQUESTS } =
-        PathUtils.getSavedProfileStatisticsDirPath(userToken.userId);
-      await FileUtils.writeCSV(
-        SENT_FRIEND_REQUESTS,
-        allSentFriendRequests.map((request, index) => ({
-          ordinal_number: index + 1,
-          ...request,
-        }))
-      );
-    }
-    return allSentFriendRequests;
   };
 
-  getProfilePostsId = async (
-    userToken: ICurrentUserToken,
-    startCursor: string,
-    totalFetchedPostsId: number,
-    limit: number
-  ) => {
-    const postsId: string[] = [];
-    console.log(
-      `🚀 Start getting posts id. Fetched ${totalFetchedPostsId}. Maximum: ${limit}`
-    );
-    let hasNextPage = false;
-    let endCursor = startCursor;
-    const baseQuery = {
+  getProfilePostsId = async ({
+    cursor,
+    profileCredentials,
+  }: IGetListRequestOptions): Promise<IGetListResponse<string>> => {
+    const credentials =
+      profileCredentials || (await this.getProfileCredentials());
+    const query = {
+      ...(cursor && { cursor }),
       afterTime: null,
       beforeTime: null,
       count: 3,
+      feedLocation: "TIMELINE",
+      feedbackSource: 0,
+      focusCommentID: null,
+      memorializedSplitTimeFilter: null,
       omitPinnedPost: true,
+      postedBy: null,
       privacy: null,
+      privacySelectorRenderLocation: "COMET_STREAM",
+      referringStoryRenderLocation: null,
+      renderLocation: "timeline",
       scale: 1,
-      id: userToken.userId,
+      stream_count: 1,
+      taggedInOnly: null,
+      trackingCode: null,
+      useDefaultActor: false,
+      id: credentials.userId,
+      __relay_internal__pv__GHLShouldChangeAdIdFieldNamerelayprovider: true,
+      __relay_internal__pv__GHLShouldChangeSponsoredDataFieldNamerelayprovider: true,
+      __relay_internal__pv__CometFeedStory_enable_post_permalink_white_space_clickrelayprovider: false,
+      __relay_internal__pv__CometUFICommentActionLinksRewriteEnabledrelayprovider: false,
+      __relay_internal__pv__CometUFICommentAvatarStickerAnimatedImagerelayprovider: false,
+      __relay_internal__pv__IsWorkUserrelayprovider: false,
+      __relay_internal__pv__TestPilotShouldIncludeDemoAdUseCaserelayprovider: false,
+      __relay_internal__pv__FBReels_deprecate_short_form_video_context_gkrelayprovider: true,
+      __relay_internal__pv__FBReels_enable_view_dubbed_audio_type_gkrelayprovider: true,
+      __relay_internal__pv__CometImmersivePhotoCanUserDisable3DMotionrelayprovider: false,
+      __relay_internal__pv__WorkCometIsEmployeeGKProviderrelayprovider: false,
+      __relay_internal__pv__IsMergQAPollsrelayprovider: false,
+      __relay_internal__pv__FBReelsMediaFooter_comet_enable_reels_ads_gkrelayprovider: true,
+      __relay_internal__pv__CometUFIReactionsEnableShortNamerelayprovider: false,
+      __relay_internal__pv__CometUFICommentAutoTranslationTyperelayprovider:
+        "ORIGINAL",
+      __relay_internal__pv__CometUFIShareActionMigrationrelayprovider: true,
+      __relay_internal__pv__CometUFISingleLineUFIrelayprovider: false,
+      __relay_internal__pv__CometUFI_dedicated_comment_routable_dialog_gkrelayprovider: true,
+      __relay_internal__pv__FBReelsIFUTileContent_reelsIFUPlayOnHoverrelayprovider: true,
+      __relay_internal__pv__GroupsCometGYSJFeedItemHeightrelayprovider: 206,
+      __relay_internal__pv__ShouldEnableBakedInTextStoriesrelayprovider: true,
+      __relay_internal__pv__StoriesShouldIncludeFbNotesrelayprovider: true,
     };
+    const docID = "26662827129980518";
+    const headers = {
+      "x-fb-friendly-name": "ProfileCometTimelineFeedRefetchQuery",
+    };
+
     const postIdRegex = /"post_id":"(.*?)","cix_screen":/g;
     const pageInforRegex = /"data":\{"page_info":(.*?)\},"extensions"/;
-    do {
-      const docID = "8687710371346343";
-      const query = {
-        ...baseQuery,
-        cursor: endCursor,
-      };
-      const responseText = await this.makeRequestToFacebook(
-        userToken,
-        docID,
-        query
-      );
-
-      const postsIdTemp: string[] = [];
-      const pageInfoInText = pageInforRegex.exec(responseText)?.[1];
-      if (!pageInfoInText) {
-        console.log("😐 There are some errors. Start retrying...");
-        continue;
+    const responseText = await this.makeRequestToFacebook({
+      profileCredentials: credentials,
+      docID,
+      query,
+      headers,
+    });
+    const postsId: string[] = [];
+    const postsIdTemp: string[] = [];
+    const pageInfoInText = pageInforRegex.exec(responseText)?.[1];
+    if (!pageInfoInText) {
+      throw new Error("Failed to extract page info from response");
+    }
+    const pageInfo = JSON.parse(pageInfoInText);
+    let match;
+    while ((match = postIdRegex.exec(responseText)) !== null) {
+      if (match[1] && match[1].length < 30) {
+        postsIdTemp.push(match[1]);
       }
-      const pageInfo = JSON.parse(pageInfoInText);
-      let match;
-      while ((match = postIdRegex.exec(responseText)) !== null) {
-        if (match[1] && match[1].length < 30) {
-          postsIdTemp.push(match[1]);
-        }
-      }
-      postsId.push(...postsIdTemp);
-      console.log(`🔥 Got ${postsId.length} posts id...`);
-      hasNextPage = pageInfo.has_next_page;
-      endCursor = pageInfo.end_cursor;
-    } while (hasNextPage && postsId.length < limit);
+    }
+    postsId.push(...postsIdTemp);
 
-    const cacheCursorInfor: ICachedCursor = {
-      nextCursor: hasNextPage ? endCursor : "",
-      totalFetchedItems: hasNextPage ? totalFetchedPostsId + postsId.length : 0,
+    const hasMore = pageInfo.has_next_page;
+    const nextCursor = pageInfo.end_cursor;
+
+    return {
+      data: postsId,
+      pagination: {
+        hasMore,
+        nextCursor,
+      },
     };
-    CacheCursor.writeCacheCursor(
-      userToken.userId,
-      "POSTS_ID",
-      cacheCursorInfor
-    );
-    hasNextPage
-      ? console.log(
-          `🔃 Got ${postsId.length} posts id and still have posts id left`
-        )
-      : console.log(
-          `✅ Get posts id of current user successfully. Total: ${
-            postsId.length + totalFetchedPostsId
-          }`
-        );
-
-    return postsId;
   };
 
-  getReactionData = async (
-    userToken: ICurrentUserToken,
-    month: number,
-    year: number
-  ) => {
-    const result: IReactionData[] = [];
-    let hasNextPage = false;
-    let endCursor = "";
-    const baseQuery = {
+  getReactionData = async ({
+    cursor,
+    profileCredentials,
+    month,
+    year,
+  }: IGetListRequestOptions & { month?: number; year?: number }): Promise<
+    IGetListResponse<IReactionData>
+  > => {
+    const credentials =
+      profileCredentials || (await this.getProfileCredentials());
+    const query = {
+      ...(cursor && { cursor }),
       audience: null,
       category: "LIKEDPOSTS",
       category_key: "LIKEDPOSTS",
       count: 25,
       feedLocation: null,
       media_content_filters: [],
-      month,
+      month: month || null,
       person_id: null,
       privacy: "NONE",
       scale: 1,
       timeline_visibility: "ALL",
-      year,
-      id: userToken.userId,
+      year: year || null,
+      id: credentials.userId,
     };
-    console.log(`\n🚀 Start getting reactions in ${month}/${year}.`);
-    do {
-      const docID = "27684299287850969";
-      const query = {
-        ...baseQuery,
-        cursor: endCursor,
-      };
-      let responseData = await this.makeRequestToFacebook(
-        userToken,
-        docID,
-        query
-      );
-      if (typeof responseData !== "object") {
-        responseData = JSON.parse(responseData.split("\n")[0]);
-      }
+    const docID = "26612632988372046";
+    const headers = {
+      "x-fb-friendly-name": "CometActivityLogStoriesListPaginationQuery",
+    };
+    let responseData = await this.makeRequestToFacebook({
+      profileCredentials: credentials,
+      docID,
+      query,
+      headers,
+    });
+    if (typeof responseData !== "object") {
+      responseData = JSON.parse(responseData.split("\n")[0]);
+    }
 
-      const originalReactionsData =
-        responseData?.data?.node?.activity_log_stories?.edges;
-      const pageInfor =
-        responseData?.data?.node?.activity_log_stories?.page_info;
-      if (!originalReactionsData || !pageInfor) {
-        console.log(
-          `😐 There are some errors when getting reactions in ${month}/${year}. Start retrying...`
-        );
-        continue;
-      }
-      const reactionsData: IReactionData[] = originalReactionsData
-        .map((post: any) => {
-          const postNode = post.node;
-          if (!postNode.id || !postNode.post_id) {
-            return undefined;
-          }
-          return {
-            storyId: postNode.id,
-            postId: postNode.post_id,
-          };
-        })
-        .filter((reaction: any) => !!reaction);
-      result.push(...reactionsData);
-      console.log(`🔥 Got ${result.length} reactions...`);
-      hasNextPage = pageInfor.has_next_page;
-      endCursor = pageInfor.end_cursor;
-    } while (hasNextPage);
-    console.log(
-      `✅ Got all reactions in ${month}/${year} successfully. Total: ${result.length}`
-    );
+    const originalReactionsData =
+      responseData?.data?.viewer?.activity_log_actor?.activity_log_stories
+        ?.edges;
+    const pageInfor =
+      responseData?.data?.viewer?.activity_log_actor?.activity_log_stories
+        ?.page_info;
 
-    return result;
+    if (!originalReactionsData || !pageInfor) {
+      throw new Error(`Failed to extract reaction data for ${month}/${year}`);
+    }
+    const reactionsData: IReactionData[] = originalReactionsData
+      .map((post: any) => {
+        const postNode = post.node;
+        if (!postNode.id || !postNode.post_id) {
+          return undefined;
+        }
+        return {
+          storyId: postNode.id,
+          postId: postNode.post_id,
+        };
+      })
+      .filter((reaction: any) => !!reaction);
+
+    const hasMore = pageInfor.has_next_page;
+    const nextCursor = pageInfor.end_cursor;
+
+    return {
+      data: reactionsData,
+      pagination: {
+        hasMore,
+        nextCursor,
+      },
+    };
   };
 
-  getCommentData = async (
-    userToken: ICurrentUserToken,
-    month: number,
-    year: number
-  ) => {
-    const result: ICommentData[] = [];
-    let hasNextPage = false;
-    let endCursor = "";
-    const baseQuery = {
+  getCommentData = async ({
+    cursor,
+    profileCredentials,
+    month,
+    year,
+  }: IGetListRequestOptions & { month?: number; year?: number }): Promise<
+    IGetListResponse<ICommentData>
+  > => {
+    const credentials =
+      profileCredentials || (await this.getProfileCredentials());
+
+    const query = {
+      id: credentials.userId,
+      ...(cursor && { cursor }),
+      month: month || null,
+      year: year || null,
+
       audience: null,
       category: "COMMENTSCLUSTER",
       category_key: "COMMENTSCLUSTER",
       count: 25,
       feedLocation: null,
       media_content_filters: [],
-      month,
       person_id: null,
       privacy: "NONE",
       scale: 1,
       timeline_visibility: "ALL",
-      year,
-      id: userToken.userId,
     };
-    console.log(`\n🚀 Start getting comments in ${month}/${year}.`);
-    do {
-      const docID = "27684299287850969";
-      const query = {
-        ...baseQuery,
-        cursor: endCursor,
-      };
-      let responseData = await this.makeRequestToFacebook(
-        userToken,
-        docID,
-        query
-      );
-      if (typeof responseData !== "object") {
-        responseData = JSON.parse(responseData.split("\n")[0]);
-      }
+    const docID = "26612632988372046";
+    const headers = {
+      "x-fb-friendly-name": "CometActivityLogStoriesListPaginationQuery",
+    };
+    let responseData = await this.makeRequestToFacebook({
+      profileCredentials: credentials,
+      docID,
+      query,
+      headers,
+    });
+    if (typeof responseData !== "object") {
+      responseData = JSON.parse(responseData.split("\n")[0]);
+    }
 
-      const originalCommentsData =
-        responseData?.data?.node?.activity_log_stories?.edges;
-      const pageInfor =
-        responseData?.data?.node?.activity_log_stories?.page_info;
-      if (!originalCommentsData || !pageInfor) {
-        console.log(
-          `😐 There are some errors when getting comments in ${month}/${year}. Start retrying...`
-        );
-        continue;
-      }
-      const commentsData: ICommentData[] = originalCommentsData
-        .map((post: any) => {
-          const postNode = post.node;
-          if (!postNode.id || !postNode.post_id) {
-            return undefined;
-          }
-          return {
-            storyId: postNode.id,
-            postId: postNode.post_id,
-          };
-        })
-        .filter((comment: any) => !!comment);
-      result.push(...commentsData);
-      console.log(`🔥 Got ${result.length} comments...`);
-      hasNextPage = pageInfor.has_next_page;
-      endCursor = pageInfor.end_cursor;
-    } while (hasNextPage);
-    console.log(
-      `✅ Got all comments in ${month}/${year} successfully. Total: ${result.length}`
-    );
+    const originalCommentsData =
+      responseData?.data?.viewer?.activity_log_actor?.activity_log_stories
+        ?.edges;
+    const pageInfor =
+      responseData?.data?.viewer?.activity_log_actor?.activity_log_stories
+        ?.page_info;
+    if (!originalCommentsData || !pageInfor) {
+      throw new Error(`Failed to extract comment data for ${month}/${year}`);
+    }
+    const commentsData: ICommentData[] = originalCommentsData
+      .map((post: any) => {
+        const postNode = post.node;
+        if (!postNode.id || !postNode.post_id) {
+          return undefined;
+        }
+        return {
+          storyId: postNode.id,
+          postId: postNode.post_id,
+        };
+      })
+      .filter((comment: any) => !!comment);
 
-    return result;
+    const hasMore = pageInfor.has_next_page;
+    const nextCursor = pageInfor.end_cursor;
+
+    return {
+      data: commentsData,
+      pagination: {
+        hasMore,
+        nextCursor,
+      },
+    };
   };
 
-  removeAllFriends = async (batchSize: number) => {
-    const allFriends = await this.getAllFriends();
-    const userToken = await this.getCurrentUserToken();
-    console.log("\n🚀 Start removing all friends...");
-    for (let i = 0; i < allFriends.length; i += batchSize) {
-      const from = i;
-      const to = Math.min(i + batchSize, allFriends.length);
-      const friendIDs = allFriends.slice(from, to).map((friend) => friend.id);
-      await Promise.all(
-        friendIDs.map(async (friendID) => {
-          const responseData = await this.makeRequestToFacebook(
-            userToken,
-            "8752443744796374",
-            {
-              input: {
-                source: "bd_profile_button",
-                unfriended_user_id: friendID,
-                actor_id: userToken.userId,
-                client_mutation_id: "1",
-              },
-              scale: 1,
-            }
-          );
-          if (!responseData?.data?.friend_remove?.unfriended_person?.id) {
-            throw new Error(
-              `❌ Error when removing friend with ID ${friendID}.`
-            );
-          }
-        })
-      );
-      console.log(`🔥 Removed ${to}/${allFriends.length} friends...`);
+  unfriend = async ({
+    profileCredentials,
+    friendId,
+  }: {
+    profileCredentials?: IProfileCredentials;
+    friendId: string;
+  }) => {
+    const credentials =
+      profileCredentials || (await this.getProfileCredentials());
+    const responseData = await this.makeRequestToFacebook({
+      profileCredentials: credentials,
+      docID: "24028849793460009",
+      query: {
+        input: {
+          source: "bd_profile_button",
+          unfriended_user_id: friendId,
+          actor_id: credentials.userId,
+          client_mutation_id: "6",
+        },
+        scale: 1,
+      },
+      headers: {
+        "x-fb-friendly-name": "FriendingCometUnfriendMutation",
+      },
+    });
+    if (!responseData?.data?.friend_remove?.unfriended_person?.id) {
+      throw new Error(`❌ Error when unfriending ${friendId}.`);
     }
-    console.log("✅ Removed all friends successfully");
   };
 
-  removeAllLikedPages = async (batchSize: number) => {
-    const allLikedPages = await this.getAllLikedPages();
-    const userToken = await this.getCurrentUserToken();
-    console.log("\n🚀 Start removing all liked pages...");
-    for (let i = 0; i < allLikedPages.length; i += batchSize) {
-      const from = i;
-      const to = Math.min(i + batchSize, allLikedPages.length);
-      const pageIDs = allLikedPages.slice(from, to).map((page) => page.id);
-      await Promise.all(
-        pageIDs.map(async (pageID) => {
-          const docID = "5358677870817645";
-          const query = {
-            input: {
-              page_id: pageID,
-              actor_id: userToken.userId,
-              source: "page_profile",
-              client_mutation_id: "1",
-            },
-            scale: 1,
-          };
-          const responseData = await this.makeRequestToFacebook(
-            userToken,
-            docID,
-            query
-          );
-
-          if (
-            !responseData?.data?.page_unlike.page
-              ?.profile_plus_for_delegate_page?.id
-          ) {
-            throw new Error(
-              `❌ Error when removing liked page with ID ${pageID}.`
-            );
-          }
-        })
-      );
-      console.log(`🔥 Removed ${to}/${allLikedPages.length} liked pages...`);
+  unfollowPage = async ({
+    profileCredentials,
+    pageId,
+  }: {
+    profileCredentials?: IProfileCredentials;
+    pageId: string;
+  }) => {
+    const credentials =
+      profileCredentials || (await this.getProfileCredentials());
+    const docID = "23977842521823837";
+    const query = {
+      input: {
+        subscribe_location: "PAGE_FAN",
+        unsubscribee_id: pageId,
+        actor_id: credentials.userId,
+        client_mutation_id: "6",
+      },
+    };
+    const headers = {
+      "x-fb-friendly-name": "usePageCometUnfollowMutation",
+    };
+    const responseData = await this.makeRequestToFacebook({
+      profileCredentials: credentials,
+      docID,
+      query,
+      headers,
+    });
+    if (!responseData?.data?.actor_unsubscribe?.unsubscribee?.id) {
+      throw new Error(`❌ Error when unfollowing page with ID ${pageId}.`);
     }
-    console.log("✅ Removed all liked pages successfully");
   };
 
-  leaveAllJoinedGroups = async (batchSize: number) => {
-    const allJoinedGroups = await this.getAllJoinedGroups();
-    const userToken = await this.getCurrentUserToken();
-    console.log("\n🚀 Start leaving all joined groups...");
-    for (let i = 0; i < allJoinedGroups.length; i += batchSize) {
-      const from = i;
-      const to = Math.min(i + batchSize, allJoinedGroups.length);
-      const groupIDs = allJoinedGroups.slice(from, to).map((group) => group.id);
-      await Promise.all(
-        groupIDs.map(async (groupID) => {
-          const docID = "7925432007559878";
-          const query = {
-            groupID: groupID,
-            input: {
-              action_source: "COMET_GROUP_PAGE",
-              attribution_id_v2:
-                "CometGroupDiscussionRoot.react,comet.group,via_cold_start,1733130150010,318182,2361831622,,",
-              group_id: groupID,
-              readd_policy: "ALLOW_READD",
-              actor_id: userToken.userId,
-              client_mutation_id: "1",
-            },
-            ordering: ["viewer_added"],
-            scale: 1,
-          };
-          const responseData = await this.makeRequestToFacebook(
-            userToken,
-            docID,
-            query
-          );
-          if (!responseData?.data?.group_leave?.group?.id) {
-            throw new Error(`❌ Error when leaving group with ID ${groupID}.`);
-          }
-        })
-      );
-      console.log(`🔥 Left ${to}/${allJoinedGroups.length} joined groups...`);
+  leaveGroup = async ({
+    profileCredentials,
+    groupId,
+  }: {
+    profileCredentials?: IProfileCredentials;
+    groupId: string;
+  }) => {
+    const credentials =
+      profileCredentials || (await this.getProfileCredentials());
+    const docID = "24361296076901408";
+    const query = {
+      groupID: groupId,
+      input: {
+        action_source: "COMET_GROUP_PAGE",
+        attribution_id_v2:
+          "GroupsCometJoinsRoot.react,comet.groups.joins,unexpected,1774971471296,865482,,,;GroupsCometCrossGroupFeedRoot.react,comet.groups.feed,tap_bookmark,1774971466617,45981,2361831622,,",
+        group_id: groupId,
+        readd_policy: "ALLOW_READD",
+        actor_id: credentials.userId,
+        client_mutation_id: "9",
+      },
+      ordering: ["viewer_added"],
+      scale: 1,
+    };
+    const headers = {
+      "x-fb-friendly-name": "useGroupLeaveMutation",
+    };
+    const responseData = await this.makeRequestToFacebook({
+      profileCredentials: credentials,
+      docID,
+      query,
+      headers,
+    });
+    if (!responseData?.data?.group_leave?.group?.id) {
+      throw new Error(`❌ Error when leaving group with ID ${groupId}.`);
     }
-    console.log("✅ Left all joined groups successfully");
   };
 
-  unfollowAllPagesAndUsers = async (batchSize: number) => {
-    const allFollowing = await this.getAllFollowing();
-    const userToken = await this.getCurrentUserToken();
-    console.log("\n🚀 Start unfollowing all pages and users...");
-    for (let i = 0; i < allFollowing.length; i += batchSize) {
-      const from = i;
-      const to = Math.min(i + batchSize, allFollowing.length);
-      const followingIDs = allFollowing
-        .slice(from, to)
-        .map((following) => following.id);
-
-      await Promise.all(
-        followingIDs.map(async (followingID) => {
-          const docID = "8428368873907381";
-          const query = {
-            input: {
-              subscribe_location: "PROFILE",
-              unsubscribee_id: followingID,
-              actor_id: userToken.userId,
-            },
-            scale: 1,
-          };
-          const responseData = await this.makeRequestToFacebook(
-            userToken,
-            docID,
-            query
-          );
-
-          if (!responseData?.data?.actor_unsubscribe?.unsubscribee?.id) {
-            throw new Error(
-              `❌ Error when unfollowing page/user with ID ${followingID}.`
-            );
-          }
-        })
+  unfollowUserOrPage = async ({
+    profileCredentials,
+    userOrPageId,
+  }: {
+    profileCredentials?: IProfileCredentials;
+    userOrPageId: string;
+  }) => {
+    const credentials =
+      profileCredentials || (await this.getProfileCredentials());
+    const docID = "27282909147964207";
+    const query = {
+      action_render_location: "WWW_COMET_FRIEND_MENU",
+      input: {
+        is_tracking_encrypted: false,
+        subscribe_location: "PROFILE",
+        tracking: null,
+        unsubscribee_id: userOrPageId,
+        actor_id: credentials.userId,
+        client_mutation_id: "10",
+      },
+      scale: 1,
+    };
+    const headers = {
+      "x-fb-friendly-name": "CometUserUnfollowMutation",
+    };
+    const responseData = await this.makeRequestToFacebook({
+      profileCredentials: credentials,
+      docID,
+      query,
+      headers,
+    });
+    if (!responseData?.data?.actor_unsubscribe?.unsubscribee?.id) {
+      throw new Error(
+        `❌ Error when unfollowing user or page with ID ${userOrPageId}.`,
       );
-      console.log(`🔥 Unfollowed ${to}/${allFollowing.length} pages/users...`);
     }
-    console.log("✅ Unfollowed all pages and users successfully");
   };
 
-  cancelAllSentFriendRequests = async (batchSize: number) => {
-    const allSentFriendRequests = await this.getAllSentFriendRequests();
-    const userToken = await this.getCurrentUserToken();
-    console.log("\n🚀 Start canceling all sent friend requests...");
-    for (let i = 0; i < allSentFriendRequests.length; i += batchSize) {
-      const from = i;
-      const to = Math.min(i + batchSize, allSentFriendRequests.length);
-      const requestIDs = allSentFriendRequests
-        .slice(from, to)
-        .map((request) => request.id);
-
-      await Promise.all(
-        requestIDs.map(async (requestID) => {
-          const docID = "5247084515315799";
-          const query = {
-            input: {
-              attribution_id_v2:
-                "FriendingCometFriendRequestsRoot.react,comet.friending.friendrequests",
-              cancelled_friend_requestee_id: requestID,
-              friending_channel: "MANAGE_OUTGOING_REQUESTS",
-              actor_id: userToken.userId,
-              client_mutation_id: "6",
-            },
-            scale: 1,
-          };
-          const responseData = await this.makeRequestToFacebook(
-            userToken,
-            docID,
-            query
-          );
-
-          if (
-            !responseData?.data?.friend_request_cancel
-              ?.cancelled_friend_requestee?.id
-          ) {
-            throw new Error(
-              `❌ Error when canceling friend request with ID ${requestID}.`
-            );
-          }
-        })
-      );
-      console.log(
-        `🔥 Canceled ${to}/${allSentFriendRequests.length} sent friend requests...`
+  cancelSentFriendRequest = async ({
+    profileCredentials,
+    userId,
+  }: {
+    profileCredentials?: IProfileCredentials;
+    userId: string;
+  }) => {
+    const credentials =
+      profileCredentials || (await this.getProfileCredentials());
+    const docID = "24453541284254355";
+    const query = {
+      input: {
+        cancelled_friend_requestee_id: userId,
+        click_correlation_id: String(Date.now()),
+        click_proof_validation_result: '{"validated":true}',
+        friending_channel: "MANAGE_OUTGOING_REQUESTS",
+        actor_id: credentials.userId,
+        client_mutation_id: "4",
+      },
+      scale: 1,
+    };
+    const headers = {
+      "x-fb-friendly-name": "FriendingCometFriendRequestCancelMutation",
+    };
+    const responseData = await this.makeRequestToFacebook({
+      profileCredentials: credentials,
+      docID,
+      query,
+      headers,
+    });
+    if (
+      !responseData?.data?.friend_request_cancel?.cancelled_friend_requestee?.id
+    ) {
+      throw new Error(
+        `❌ Error when canceling sent friend request to user with ID ${userId}.`,
       );
     }
-    console.log("✅ Canceled all sent friend requests successfully");
   };
 
-  deleteProfilePosts = async (limit: number, batchSize: number) => {
-    if (limit !== Infinity && limit % 3 !== 0) {
-      throw new Error("❌ Limit must be a multiple of 3");
+  deletePost = async ({
+    profileCredentials,
+    postId,
+  }: {
+    profileCredentials?: IProfileCredentials;
+    postId: string;
+  }) => {
+    const credentials =
+      profileCredentials || (await this.getProfileCredentials());
+    const { userId } = credentials;
+    const docID = "26146132388368957";
+    const query = {
+      input: {
+        story_id: btoa(`S:_I${userId}:${postId}:${postId}`),
+        story_location: "TIMELINE",
+        actor_id: userId,
+        client_mutation_id: "2",
+      },
+    };
+    const headers = {
+      "x-fb-friendly-name": "useCometTrashPostMutation",
+    };
+    const responseData = await this.makeRequestToFacebook({
+      profileCredentials: credentials,
+      docID,
+      query,
+      headers,
+    });
+    if (!responseData?.data?.move_to_trash_story?.success) {
+      throw new Error(`❌ Error when deleting post with ID ${postId}.`);
     }
-    const userToken = await this.getCurrentUserToken();
-    const postsId = await this.getProfilePostsId(userToken, "", 0, limit);
-    console.log(`\n🚀 Start deleting posts. Maximum: ${limit}`);
-    for (let i = 0; i < postsId.length; i += batchSize) {
-      const from = i;
-      const to = Math.min(i + batchSize, postsId.length);
-      const slicePostsId = postsId.slice(from, to);
-      await Promise.all(
-        slicePostsId.map(async (postId) => {
-          const docID = "27474543675493933";
-          const query = {
-            input: {
-              story_id: btoa(`S:_I${userToken.userId}:${postId}:${postId}`),
-              story_location: "PERMALINK",
-              actor_id: userToken.userId,
-              client_mutation_id: "2",
-            },
-            scale: 1,
-          };
-          const responseData = await this.makeRequestToFacebook(
-            userToken,
-            docID,
-            query
-          );
-          if (!responseData?.data?.story_delete?.deleted_story_id) {
-            throw new Error(`❌ Error when deleting post with ID ${postId}`);
-          }
-        })
-      );
-      console.log(`🔥 Deleted ${to}/${postsId.length} posts...`);
-    }
-    console.log("✅ Delete posts successfully.");
   };
 
-  changePostsPrivacy = async (
-    privacy: "SELF" | "EVERYONE" | "FRIENDS",
-    limit: number,
-    batchSize: number
-  ) => {
-    if (limit !== Infinity && limit % 3 !== 0) {
-      throw new Error("❌ Limit must be a multiple of 3");
-    }
-    const userToken = await this.getCurrentUserToken();
-    const cursor = CacheCursor.getCacheCursor(userToken.userId, "POSTS_ID");
-    const startCursor = cursor?.nextCursor || "";
-    const totalFetchedPosts = cursor?.totalFetchedItems || 0;
-    const postsId = await this.getProfilePostsId(
-      userToken,
-      startCursor,
-      totalFetchedPosts,
-      limit
-    );
-    console.log(
-      `\n🚀 Start changing posts privacy to ${privacy}. Maximum: ${limit}`
-    );
-    for (let i = 0; i < postsId.length; i += batchSize) {
-      const from = i;
-      const to = Math.min(i + batchSize, postsId.length);
-      const slicePostsId = postsId.slice(from, to);
-      await Promise.all(
-        slicePostsId.map(async (postId) => {
-          const docID = "8661755633904824";
-          const query = {
-            input: {
-              privacy_row_input: {
-                allow: [],
-                base_state: privacy,
-                deny: [],
-                tag_expansion_state: "UNSPECIFIED",
-              },
-              privacy_write_id: btoa(`privacy_scope_renderer:{"id":${postId}}`),
-              render_location: "COMET_STORY_MENU",
-              actor_id: userToken.userId,
-              client_mutation_id: "4",
-            },
-            scale: 1,
-          };
-          const responseData = await this.makeRequestToFacebook(
-            userToken,
-            docID,
-            query
-          );
-          if (
-            !responseData?.data?.privacy_selector_save?.privacy_scope
-              ?.privacy_scope_renderer?.id
-          ) {
-            throw new Error(
-              `❌ Error when changing privacy of post with ID ${postId}`
-            );
-          }
-        })
+  changePostPrivacy = async ({
+    profileCredentials,
+    postId,
+    privacy,
+  }: {
+    profileCredentials?: IProfileCredentials;
+    postId: string;
+    privacy: "SELF" | "EVERYONE" | "FRIENDS";
+  }) => {
+    const credentials =
+      profileCredentials || (await this.getProfileCredentials());
+    const { userId } = credentials;
+    const docID = "34450894234558788";
+    const query = {
+      input: {
+        privacy_mutation_token: null,
+        privacy_row_input: {
+          allow: [],
+          base_state: privacy,
+          deny: [],
+          tag_expansion_state: "UNSPECIFIED",
+        },
+        privacy_write_id: btoa(`privacy_scope_renderer:{"id":${postId}}`),
+        render_location: "COMET_STORY_MENU",
+        actor_id: userId,
+        client_mutation_id: "4",
+      },
+      privacySelectorRenderLocation: "COMET_STORY_MENU",
+      scale: 1,
+      storyRenderLocation: "timeline",
+      tags: null,
+      __relay_internal__pv__CometUFIShareActionMigrationrelayprovider: true,
+      __relay_internal__pv__CometUFISingleLineUFIrelayprovider: true,
+    };
+    const headers = {
+      "x-fb-friendly-name": "CometPrivacySelectorSavePrivacyMutation",
+    };
+    const responseData = await this.makeRequestToFacebook({
+      profileCredentials: credentials,
+      docID,
+      query,
+      headers,
+    });
+    if (
+      !responseData?.data?.privacy_selector_save?.privacy_scope
+        ?.privacy_scope_renderer?.id
+    ) {
+      throw new Error(
+        `❌ Error when changing privacy of post with ID ${postId}.`,
       );
-      console.log(`🔥 Changed privacy ${to}/${postsId.length} posts...`);
     }
-    console.log(`✅ Changed privacy posts to ${privacy} successfully.`);
   };
 
-  deleteReactionById = async (
-    userToken: ICurrentUserToken,
-    reactionData: IReactionData
-  ) => {
-    const docID = "6951244711576579";
+  deleteReaction = async ({
+    profileCredentials,
+    reactionData,
+  }: {
+    profileCredentials?: IProfileCredentials;
+    reactionData: IReactionData;
+  }) => {
+    const credentials =
+      profileCredentials || (await this.getProfileCredentials());
+    const docID = "24411931498505270";
     const query = {
       input: {
         action: "UNLIKE",
         category_key: "LIKEDPOSTS",
         deletion_request_id: null,
-        post_id_str: reactionData.postId,
+        post_id_str: reactionData.postId || null,
         story_id: reactionData.storyId,
         story_location: "ACTIVITY_LOG",
-        actor_id: userToken.userId,
-        client_mutation_id: "1",
+        structured_error_handling: true,
+        actor_id: credentials.userId,
+        client_mutation_id: "8",
       },
     };
-    const responseData = await this.makeRequestToFacebook(
-      userToken,
+    const headers = {
+      "x-fb-friendly-name": "CometActivityLogItemCurationMutation",
+    };
+    const responseData = await this.makeRequestToFacebook({
+      profileCredentials: credentials,
       docID,
-      query
-    );
+      query,
+      headers,
+    });
+    if (!responseData?.data?.activity_log_story_curation?.success) {
+      throw new Error(
+        `❌ Error when deleting reaction with story ID ${reactionData.storyId} and post ID ${reactionData.postId}.`,
+      );
+    }
   };
 
-  deleteCommentById = async (
-    userToken: ICurrentUserToken,
-    commentData: ICommentData
-  ) => {
-    const docID = "6951244711576579";
+  deleteCommentById = async ({
+    profileCredentials,
+    commentData,
+  }: {
+    profileCredentials?: IProfileCredentials;
+    commentData: ICommentData;
+  }) => {
+    const credentials =
+      profileCredentials || (await this.getProfileCredentials());
+    const docID = "24411931498505270";
     const query = {
       input: {
         action: "REMOVE_COMMENT",
         category_key: "COMMENTSCLUSTER",
         deletion_request_id: null,
-        post_id_str: commentData.postId,
+        post_id_str: commentData.postId || null,
         story_id: commentData.storyId,
         story_location: "ACTIVITY_LOG",
-        actor_id: userToken.userId,
-        client_mutation_id: "2",
+        structured_error_handling: true,
+        actor_id: credentials.userId,
+        client_mutation_id: "9",
       },
     };
-    const responseData = await this.makeRequestToFacebook(
-      userToken,
+    const headers = {
+      "x-fb-friendly-name": "CometActivityLogItemCurationMutation",
+    };
+    const responseData = await this.makeRequestToFacebook({
+      profileCredentials: credentials,
       docID,
-      query
-    );
+      query,
+      headers,
+    });
+    if (!responseData?.data?.activity_log_story_curation?.success) {
+      throw new Error(
+        `❌ Error when deleting comment with story ID ${commentData.storyId} and post ID ${commentData.postId}.`,
+      );
+    }
   };
 }
 
