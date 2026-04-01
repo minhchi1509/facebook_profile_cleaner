@@ -1,4 +1,4 @@
-import axios, { AxiosError, AxiosInstance } from "axios";
+import axios, { AxiosInstance } from "axios";
 import {
   IGetListRequestOptions,
   IGetListResponse,
@@ -24,28 +24,15 @@ class FacebookRequest {
   constructor(cookies: string, requestOptions?: IRequestOptions) {
     this.axiosInstance = axios.create({
       baseURL: "https://www.facebook.com/api/graphql",
-      headers: { cookie: cookies },
+      headers: {
+        cookie: cookies,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
     });
     this.requestOptions = {
       retryCount: requestOptions?.retryCount ?? 5,
       retryDelayInMs: requestOptions?.retryDelayInMs ?? 1000,
     };
-    this.axiosInstance.interceptors.response.use(
-      (res) => res,
-      (error: AxiosError) => {
-        if (error.response) {
-          const responseData = error.response.data;
-          throw new Error(
-            `❌ Error when making request to Facebook: ${JSON.stringify(
-              responseData,
-              null,
-              2,
-            )}`,
-          );
-        }
-        throw new Error(`❌ Unknown error: ${error.message}`);
-      },
-    );
   }
 
   getProfileCredentials = async () => {
@@ -134,7 +121,9 @@ class FacebookRequest {
     formData.set("av", profileCredentials.userId);
     formData.set("doc_id", docID);
     formData.set("variables", JSON.stringify(query));
-    const { data } = await this.axiosInstance.post("/", formData, { headers });
+    const { data } = await this.axiosInstance.post("/", formData, {
+      headers,
+    });
     return data;
   };
 
@@ -509,12 +498,14 @@ class FacebookRequest {
     const credentials =
       profileCredentials || (await this.getProfileCredentials());
     const query = {
-      ...(cursor && { cursor }),
+      activity_history: false,
       audience: null,
+      ayi_taxonomy: true,
       category: "LIKEDPOSTS",
       category_key: "LIKEDPOSTS",
       count: 25,
-      feedLocation: null,
+      cursor: cursor || null,
+      entry_point: null,
       media_content_filters: [],
       month: month || null,
       person_id: null,
@@ -522,11 +513,10 @@ class FacebookRequest {
       scale: 1,
       timeline_visibility: "ALL",
       year: year || null,
-      id: credentials.userId,
     };
-    const docID = "26612632988372046";
+    const docID = "26193682983631967";
     const headers = {
-      "x-fb-friendly-name": "CometActivityLogStoriesListPaginationQuery",
+      "x-fb-friendly-name": "CometActivityLogMainContentRootQuery",
     };
     let responseData = await this.makeRequestToFacebook({
       profileCredentials: credentials,
@@ -551,7 +541,7 @@ class FacebookRequest {
     const reactionsData: IReactionData[] = originalReactionsData
       .map((post: any) => {
         const postNode = post.node;
-        if (!postNode.id || !postNode.post_id) {
+        if (!postNode.id && !postNode.post_id) {
           return undefined;
         }
         return {
@@ -585,25 +575,25 @@ class FacebookRequest {
       profileCredentials || (await this.getProfileCredentials());
 
     const query = {
-      id: credentials.userId,
-      ...(cursor && { cursor }),
-      month: month || null,
-      year: year || null,
-
+      activity_history: false,
       audience: null,
+      ayi_taxonomy: true,
       category: "COMMENTSCLUSTER",
       category_key: "COMMENTSCLUSTER",
       count: 25,
-      feedLocation: null,
+      cursor: cursor || null,
+      entry_point: null,
       media_content_filters: [],
+      month: month || null,
       person_id: null,
       privacy: "NONE",
       scale: 1,
       timeline_visibility: "ALL",
+      year: year || null,
     };
-    const docID = "26612632988372046";
+    const docID = "26193682983631967";
     const headers = {
-      "x-fb-friendly-name": "CometActivityLogStoriesListPaginationQuery",
+      "x-fb-friendly-name": "CometActivityLogMainContentRootQuery",
     };
     let responseData = await this.makeRequestToFacebook({
       profileCredentials: credentials,
@@ -627,7 +617,7 @@ class FacebookRequest {
     const commentsData: ICommentData[] = originalCommentsData
       .map((post: any) => {
         const postNode = post.node;
-        if (!postNode.id || !postNode.post_id) {
+        if (!postNode.id && !postNode.post_id) {
           return undefined;
         }
         return {
