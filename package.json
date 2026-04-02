@@ -1,47 +1,71 @@
 {
   "name": "@minhchi1509/facebook-profile-cleaner",
-  "description": "Clean your Facebook profile by removing all posts, comments, likes, and reactions, following, sent friend requests, and more...",
-  "version": "1.1.2",
-  "main": "dist/index.cjs",
-  "module": "dist/index.esm.js",
-  "types": "dist/index.d.ts",
+  "description": "Automate Facebook profile cleanup and statistics export (friends, followings, pages, groups, posts, reactions, comments).",
+  "version": "1.2.1",
+  "main": "./dist/main.cjs",
+  "module": "./dist/main.mjs",
+  "types": "./dist/main.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/main.d.ts",
+      "import": "./dist/main.mjs",
+      "require": "./dist/main.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
-    "build": "rm -rf dist && rollup -c rollup.config.ts --configPlugin typescript && npm run build:dts-export",
+    "rollup:build": "rollup -c rollup.config.ts --configPlugin typescript",
+    "build": "rm -rf dist && npm run rollup:build && npm run bundle:dts",
     "build:dts": "rollup -c rollup.dts.mjs",
-    "build:dts-export": "dts-bundle-generator -o dist/index.d.ts src/main.ts",
-    "publish:patch": "npm run build && npm version patch --no-git-tag-version && npm publish --access public",
-    "publish:minor": "npm run build && npm version minor --no-git-tag-version && npm publish --access public",
-    "publish:major": "npm run build && npm version major --no-git-tag-version && npm publish --access public"
+    "bundle:dts": "dts-bundle-generator -o dist/main.d.ts src/main.ts",
+    "patch:publish": "npm version patch && npm publish --access public",
+    "minor:publish": "npm version minor && npm publish --access public",
+    "major:publish": "npm version major && npm publish --access public"
   },
   "devDependencies": {
-    "@rollup/plugin-commonjs": "^28.0.8",
-    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-commonjs": "^29.0.2",
     "@rollup/plugin-node-resolve": "^16.0.3",
     "@rollup/plugin-typescript": "^12.3.0",
+    "@types/node": "^25.5.0",
     "dts-bundle-generator": "^9.5.1",
-    "rollup": "^4.52.5",
-    "rollup-plugin-dts": "^6.2.3",
+    "rollup": "^4.60.1",
+    "rollup-plugin-dts": "^6.4.1",
     "rollup-plugin-typescript-paths": "^1.5.0",
-    "tsc-alias": "^1.8.10",
-    "typescript": "^5.7.2"
+    "tsc-alias": "^1.8.16",
+    "typescript": "^6.0.2"
   },
   "dependencies": {
-    "@fast-csv/format": "^5.0.2",
-    "@fast-csv/parse": "^5.0.2",
-    "@types/node": "^22.10.1",
-    "axios": "^1.7.8",
-    "dayjs": "^1.11.13",
-    "fast-csv": "^5.0.2",
+    "@fast-csv/format": "^5.0.5",
+    "@fast-csv/parse": "^5.0.5",
+    "axios": "^1.14.0",
+    "dayjs": "^1.11.20",
+    "fast-csv": "^5.0.5",
     "tslib": "^2.8.1"
   },
   "keywords": [
     "facebook",
-    "facebook-profile-cleaner"
+    "facebook-profile-cleaner",
+    "automation",
+    "cleanup",
+    "privacy",
+    "batch-processing",
+    "mass-delete",
+    "friends-management",
+    "posts-management"
   ],
   "author": "minhchi1509",
   "license": "MIT",
   "repository": {
-    "url": "https://github.com/minhchi1509/facebook_profile_cleaner"
+    "type": "git",
+    "url": "https://github.com/minhchi1509/facebook_profile_cleaner.git"
+  },
+  "bugs": {
+    "url": "https://github.com/minhchi1509/facebook_profile_cleaner/issues"
   },
   "homepage": "https://github.com/minhchi1509/facebook_profile_cleaner"
 }

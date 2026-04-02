@@ -3,9 +3,14 @@ export interface ICachedCursor {
   nextCursor: string;
 }
 
-export interface ICurrentUserToken {
+export interface IProfileCredentials {
   userId: string;
   fbDtsg: string;
+}
+
+export interface IProfileTabKey {
+  friendsAllTabKeyId: string;
+  followingTabKeyId: string;
 }
 
 export interface IFollowing {
@@ -44,6 +49,11 @@ export interface IReactionData {
 }
 
 export interface ICommentData {
+  storyId: string;
+  postId: string;
+}
+
+export interface IPostData {
   storyId: string;
   postId: string;
 }
