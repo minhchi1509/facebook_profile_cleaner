@@ -52,3 +52,8 @@ export interface ICommentData {
   storyId: string;
   postId: string;
 }
+
+export interface IPostData {
+  storyId: string;
+  postId: string;
+}

@@ -14,6 +14,7 @@ import {
   IReactionData,
   ISentFriendRequest,
   IProfileTabKey,
+  IPostData,
 } from "src/interfaces/model.interface";
 import ObjectUtils from "src/modules/utils/ObjectUtils";
 
@@ -396,90 +397,66 @@ class FacebookRequest {
     };
   };
 
-  getProfilePostsId = async ({
+  getPostsData = async ({
     cursor,
     profileCredentials,
-  }: IGetListRequestOptions): Promise<IGetListResponse<string>> => {
+    month,
+    year,
+  }: IGetListRequestOptions & { month?: number; year?: number }): Promise<
+    IGetListResponse<IPostData>
+  > => {
     const credentials =
       profileCredentials || (await this.getProfileCredentials());
     const query = {
-      ...(cursor && { cursor }),
-      afterTime: null,
-      beforeTime: null,
-      count: 3,
-      feedLocation: "TIMELINE",
-      feedbackSource: 0,
-      focusCommentID: null,
-      memorializedSplitTimeFilter: null,
-      omitPinnedPost: true,
-      postedBy: null,
-      privacy: null,
-      privacySelectorRenderLocation: "COMET_STREAM",
-      referringStoryRenderLocation: null,
-      renderLocation: "timeline",
+      activity_history: false,
+      audience: null,
+      ayi_taxonomy: true,
+      category: "MANAGEPOSTSPHOTOSANDVIDEOS",
+      category_key: "MANAGEPOSTSPHOTOSANDVIDEOS",
+      count: 25,
+      cursor: cursor || null,
+      entry_point: null,
+      media_content_filters: [],
+      month: month || null,
+      person_id: null,
+      privacy: "NONE",
       scale: 1,
-      stream_count: 1,
-      taggedInOnly: null,
-      trackingCode: null,
-      useDefaultActor: false,
-      id: credentials.userId,
-      __relay_internal__pv__GHLShouldChangeAdIdFieldNamerelayprovider: true,
-      __relay_internal__pv__GHLShouldChangeSponsoredDataFieldNamerelayprovider: true,
-      __relay_internal__pv__CometFeedStory_enable_post_permalink_white_space_clickrelayprovider: false,
-      __relay_internal__pv__CometUFICommentActionLinksRewriteEnabledrelayprovider: false,
-      __relay_internal__pv__CometUFICommentAvatarStickerAnimatedImagerelayprovider: false,
-      __relay_internal__pv__IsWorkUserrelayprovider: false,
-      __relay_internal__pv__TestPilotShouldIncludeDemoAdUseCaserelayprovider: false,
-      __relay_internal__pv__FBReels_deprecate_short_form_video_context_gkrelayprovider: true,
-      __relay_internal__pv__FBReels_enable_view_dubbed_audio_type_gkrelayprovider: true,
-      __relay_internal__pv__CometImmersivePhotoCanUserDisable3DMotionrelayprovider: false,
-      __relay_internal__pv__WorkCometIsEmployeeGKProviderrelayprovider: false,
-      __relay_internal__pv__IsMergQAPollsrelayprovider: false,
-      __relay_internal__pv__FBReelsMediaFooter_comet_enable_reels_ads_gkrelayprovider: true,
-      __relay_internal__pv__CometUFIReactionsEnableShortNamerelayprovider: false,
-      __relay_internal__pv__CometUFICommentAutoTranslationTyperelayprovider:
-        "ORIGINAL",
-      __relay_internal__pv__CometUFIShareActionMigrationrelayprovider: true,
-      __relay_internal__pv__CometUFISingleLineUFIrelayprovider: false,
-      __relay_internal__pv__CometUFI_dedicated_comment_routable_dialog_gkrelayprovider: true,
-      __relay_internal__pv__FBReelsIFUTileContent_reelsIFUPlayOnHoverrelayprovider: true,
-      __relay_internal__pv__GroupsCometGYSJFeedItemHeightrelayprovider: 206,
-      __relay_internal__pv__ShouldEnableBakedInTextStoriesrelayprovider: true,
-      __relay_internal__pv__StoriesShouldIncludeFbNotesrelayprovider: true,
+      timeline_visibility: "ALL",
+      year: year || null,
     };
-    const docID = "26662827129980518";
+    const docID = "26193682983631967";
     const headers = {
-      "x-fb-friendly-name": "ProfileCometTimelineFeedRefetchQuery",
+      "x-fb-friendly-name": "CometActivityLogMainContentRootQuery",
     };
-
-    const postIdRegex = /"post_id":"(.*?)","cix_screen":/g;
-    const pageInforRegex = /"data":\{"page_info":(.*?)\},"extensions"/;
-    const responseText = await this.makeRequestToFacebook({
+    let responseData = await this.makeRequestToFacebook({
       profileCredentials: credentials,
       docID,
       query,
       headers,
     });
-    const postsId: string[] = [];
-    const postsIdTemp: string[] = [];
-    const pageInfoInText = pageInforRegex.exec(responseText)?.[1];
-    if (!pageInfoInText) {
-      throw new Error("Failed to extract page info from response");
-    }
-    const pageInfo = JSON.parse(pageInfoInText);
-    let match;
-    while ((match = postIdRegex.exec(responseText)) !== null) {
-      if (match[1] && match[1].length < 30) {
-        postsIdTemp.push(match[1]);
-      }
-    }
-    postsId.push(...postsIdTemp);
 
-    const hasMore = pageInfo.has_next_page;
-    const nextCursor = pageInfo.end_cursor;
+    if (typeof responseData !== "object") {
+      responseData = JSON.parse(responseData.split("\n")[0]);
+    }
+    const originalPostsData =
+      responseData?.data?.viewer?.activity_log_actor?.activity_log_stories
+        ?.edges;
+    const pageInfor =
+      responseData?.data?.viewer?.activity_log_actor?.activity_log_stories
+        ?.page_info;
 
+    if (!originalPostsData || !pageInfor) {
+      throw new Error(`Failed to extract posts data for ${month}/${year}`);
+    }
+    const postsData: IPostData[] = originalPostsData.map((post: any) => ({
+      storyId: post.node.id,
+      postId: post.node.post_id,
+    }));
+
+    const hasMore = pageInfor.has_next_page;
+    const nextCursor = pageInfor.end_cursor;
     return {
-      data: postsId,
+      data: postsData,
       pagination: {
         hasMore,
         nextCursor,
@@ -818,25 +795,30 @@ class FacebookRequest {
 
   deletePost = async ({
     profileCredentials,
-    postId,
+    postData,
   }: {
     profileCredentials?: IProfileCredentials;
-    postId: string;
+    postData: IPostData;
   }) => {
     const credentials =
       profileCredentials || (await this.getProfileCredentials());
     const { userId } = credentials;
-    const docID = "26146132388368957";
+    const docID = "24411931498505270";
     const query = {
       input: {
-        story_id: btoa(`S:_I${userId}:${postId}:${postId}`),
-        story_location: "TIMELINE",
+        action: "MOVE_TO_TRASH",
+        category_key: "MANAGEPOSTSPHOTOSANDVIDEOS",
+        deletion_request_id: null,
+        post_id_str: postData.postId,
+        story_id: postData.storyId,
+        story_location: "ACTIVITY_LOG",
+        structured_error_handling: true,
         actor_id: userId,
         client_mutation_id: "2",
       },
     };
     const headers = {
-      "x-fb-friendly-name": "useCometTrashPostMutation",
+      "x-fb-friendly-name": "CometActivityLogItemCurationMutation",
     };
     const responseData = await this.makeRequestToFacebook({
       profileCredentials: credentials,
@@ -844,8 +826,10 @@ class FacebookRequest {
       query,
       headers,
     });
-    if (!responseData?.data?.move_to_trash_story?.success) {
-      throw new Error(`❌ Error when deleting post with ID ${postId}.`);
+    if (!responseData?.data?.activity_log_story_curation?.success) {
+      throw new Error(
+        `❌ Error when deleting post with ID ${postData.postId}.`,
+      );
     }
   };
 
@@ -861,7 +845,7 @@ class FacebookRequest {
     const credentials =
       profileCredentials || (await this.getProfileCredentials());
     const { userId } = credentials;
-    const docID = "34450894234558788";
+    const docID = "26563540629949194";
     const query = {
       input: {
         privacy_mutation_token: null,
@@ -872,13 +856,13 @@ class FacebookRequest {
           tag_expansion_state: "UNSPECIFIED",
         },
         privacy_write_id: btoa(`privacy_scope_renderer:{"id":${postId}}`),
-        render_location: "COMET_STORY_MENU",
+        render_location: "ACTIVITY_LOG",
         actor_id: userId,
-        client_mutation_id: "4",
+        client_mutation_id: "3",
       },
-      privacySelectorRenderLocation: "COMET_STORY_MENU",
+      privacySelectorRenderLocation: "ACTIVITY_LOG",
       scale: 1,
-      storyRenderLocation: "timeline",
+      storyRenderLocation: null,
       tags: null,
       __relay_internal__pv__CometUFIShareActionMigrationrelayprovider: true,
       __relay_internal__pv__CometUFISingleLineUFIrelayprovider: true,
@@ -941,7 +925,7 @@ class FacebookRequest {
     }
   };
 
-  deleteCommentById = async ({
+  deleteComment = async ({
     profileCredentials,
     commentData,
   }: {

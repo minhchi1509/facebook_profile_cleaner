@@ -6,6 +6,7 @@ import {
   IFriend,
   IJoinedGroups,
   ILikedPages,
+  IPostData,
   IProfileCredentials,
   IProfileTabKey,
   IReactionData,
@@ -398,34 +399,66 @@ class FacebookCleaner {
     });
   };
 
-  deletePosts = async (options: ICleanerOptions = {}) => {
+  deletePosts = async ({
+    fromDate,
+    toDate,
+    ...options
+  }: ICleanerOptions & { fromDate?: string; toDate?: string }) => {
     const normalizedOptions = this.normalizeCleanerOptions(
       options,
       "deletePosts",
     );
     const profileCredentials =
       await this.facebookRequest.getProfileCredentials();
+    const dateWindows = this.resolveDateWindows(fromDate, toDate);
 
-    const profilePostIds = await this.fetchAllByCursor<string>({
-      limit: normalizedOptions.limit,
-      actionName: "deletePosts",
-      fetchPage: (cursor) =>
-        this.facebookRequest.getProfilePostsId({
-          cursor,
-          profileCredentials,
-        }),
-    });
+    let remainingLimit = normalizedOptions.limit;
+    let totalDeleted = 0;
 
-    await this.runBatchedActions({
-      items: profilePostIds,
-      options: normalizedOptions,
-      actionName: "deletePosts",
-      runAction: (postId) =>
-        this.facebookRequest.deletePost({
-          profileCredentials,
-          postId,
-        }),
-    });
+    for (const dateWindow of dateWindows) {
+      if (remainingLimit <= 0) {
+        break;
+      }
+
+      const postsData = await this.fetchAllByCursor<IPostData>({
+        limit: remainingLimit,
+        actionName: `deletePosts (${dateWindow.label})`,
+        fetchPage: (cursor) =>
+          this.facebookRequest.getPostsData({
+            cursor,
+            profileCredentials,
+            month: dateWindow.month,
+            year: dateWindow.year,
+          }),
+      });
+
+      await this.runBatchedActions({
+        items: postsData,
+        options: {
+          ...normalizedOptions,
+          limit: remainingLimit,
+        },
+        actionName: `deletePosts (${dateWindow.label})`,
+        runAction: (postData) =>
+          this.facebookRequest.deletePost({
+            profileCredentials,
+            postData,
+          }),
+      });
+
+      totalDeleted += postsData.length;
+      if (Number.isFinite(remainingLimit)) {
+        remainingLimit -= postsData.length;
+      }
+    }
+
+    if (Number.isFinite(normalizedOptions.limit)) {
+      console.log(
+        `✅ DeletePosts overall: ${totalDeleted}/${normalizedOptions.limit}.`,
+      );
+    } else {
+      console.log(`✅ DeletePosts overall: ${totalDeleted} item(s).`);
+    }
   };
 
   changePostsPrivacy = async ({
@@ -439,11 +472,11 @@ class FacebookCleaner {
     const profileCredentials =
       await this.facebookRequest.getProfileCredentials();
 
-    const profilePostIds = await this.fetchAllByCursor<string>({
+    const profilePostIds = await this.fetchAllByCursor<IPostData>({
       limit: normalizedOptions.limit,
       actionName: "changePostsPrivacy",
       fetchPage: (cursor) =>
-        this.facebookRequest.getProfilePostsId({
+        this.facebookRequest.getPostsData({
           cursor,
           profileCredentials,
         }),
@@ -453,10 +486,10 @@ class FacebookCleaner {
       items: profilePostIds,
       options: normalizedOptions,
       actionName: "changePostsPrivacy",
-      runAction: (postId) =>
+      runAction: (postData) =>
         this.facebookRequest.changePostPrivacy({
           profileCredentials,
-          postId,
+          postId: postData.postId,
           privacy,
         }),
     });
@@ -565,7 +598,7 @@ class FacebookCleaner {
         },
         actionName: `deleteComments (${dateWindow.label})`,
         runAction: (commentData) =>
-          this.facebookRequest.deleteCommentById({
+          this.facebookRequest.deleteComment({
             profileCredentials,
             commentData,
           }),
