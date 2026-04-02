@@ -5,7 +5,7 @@
     "moduleResolution": "bundler",
     "declaration": false,
     "allowJs": true,
-    "target": "es2015",
+    "target": "esnext",
     "sourceMap": false,
     "outDir": "./dist",
     "noFallthroughCasesInSwitch": true,
@@ -15,8 +15,10 @@
     "removeComments": true,
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
+    "types": ["node"],
     "noUncheckedIndexedAccess": true,
     "forceConsistentCasingInFileNames": true,
+    "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
       "src/*": ["./src/*"]
