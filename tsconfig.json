@@ -7,6 +7,7 @@
     "allowJs": true,
     "target": "esnext",
     "sourceMap": false,
+    "rootDir": "./src",
     "outDir": "./dist",
     "noFallthroughCasesInSwitch": true,
     "resolveJsonModule": true,

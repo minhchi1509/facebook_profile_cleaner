@@ -5,8 +5,10 @@ async function build() {
   await esbuild.build({
     entryPoints: ["src/main.ts"],
     bundle: true,
-    outfile: "dist/index.cjs",
+    outfile: "dist/main.cjs",
     format: "cjs",
+    minify: true,
+    treeShaking: true,
     platform: "node",
     tsconfig: "tsconfig.json",
   });
@@ -15,10 +17,12 @@ async function build() {
   await esbuild.build({
     entryPoints: ["src/main.ts"],
     bundle: true,
-    outfile: "dist/index.esm.js",
+    outfile: "dist/main.esm.js",
     format: "esm",
     platform: "node",
     tsconfig: "tsconfig.json",
+    minify: true,
+    treeShaking: true,
   });
 }
 
