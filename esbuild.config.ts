@@ -1,28 +1,34 @@
 import * as esbuild from "esbuild";
 
+const externals = [
+  "fast-csv",
+  "@fast-csv/format",
+  "@fast-csv/parser",
+  "axios",
+  "dayjs",
+  "tslib",
+];
+const commonEsbuildOptions: esbuild.BuildOptions = {
+  entryPoints: ["src/main.ts"],
+  bundle: true,
+  platform: "node",
+  tsconfig: "tsconfig.json",
+  external: externals,
+};
+
 async function build() {
   // Build CJS version
   await esbuild.build({
-    entryPoints: ["src/main.ts"],
-    bundle: true,
+    ...commonEsbuildOptions,
     outfile: "dist/main.cjs",
     format: "cjs",
-    minify: true,
-    treeShaking: true,
-    platform: "node",
-    tsconfig: "tsconfig.json",
   });
 
   // Build ESM version
   await esbuild.build({
-    entryPoints: ["src/main.ts"],
-    bundle: true,
-    outfile: "dist/main.esm.js",
+    ...commonEsbuildOptions,
+    outfile: "dist/main.mjs",
     format: "esm",
-    platform: "node",
-    tsconfig: "tsconfig.json",
-    minify: true,
-    treeShaking: true,
   });
 }
 

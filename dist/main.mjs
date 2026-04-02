@@ -1,45 +1,8 @@
-"use strict";
-var __create = Object.create;
-var __defProp = Object.defineProperty;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-var __getOwnPropNames = Object.getOwnPropertyNames;
-var __getProtoOf = Object.getPrototypeOf;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __export = (target, all) => {
-  for (var name in all)
-    __defProp(target, name, { get: all[name], enumerable: true });
-};
-var __copyProps = (to, from, except, desc) => {
-  if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-  }
-  return to;
-};
-var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-  // If the importer is in node compatibility mode or this is not an ESM
-  // file that has been converted to a CommonJS file using a Babel-
-  // compatible transform (i.e. "__esModule" has not been set), then set
-  // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-  mod
-));
-var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
-
-// src/main.ts
-var main_exports = {};
-__export(main_exports, {
-  FacebookCleaner: () => FacebookCleaner_default,
-  FacebookStatistics: () => FacebookStatistics_default
-});
-module.exports = __toCommonJS(main_exports);
-
 // src/modules/FacebookCleaner.ts
-var import_dayjs2 = __toESM(require("dayjs"));
+import dayjs2 from "dayjs";
 
 // src/modules/FacebookRequest.ts
-var import_axios = __toESM(require("axios"));
+import axios from "axios";
 
 // src/modules/utils/ObjectUtils.ts
 var ObjectUtils = class _ObjectUtils {
@@ -93,7 +56,7 @@ var FacebookRequest = class {
   axiosInstance;
   requestOptions;
   constructor(cookies, requestOptions) {
-    this.axiosInstance = import_axios.default.create({
+    this.axiosInstance = axios.create({
       baseURL: "https://www.facebook.com/api/graphql",
       headers: {
         cookie: cookies,
@@ -958,33 +921,33 @@ var FacebookRequest = class {
 var FacebookRequest_default = FacebookRequest;
 
 // src/modules/utils/DateUtils.ts
-var import_dayjs = __toESM(require("dayjs"));
-var import_customParseFormat = __toESM(require("dayjs/plugin/customParseFormat"));
-import_dayjs.default.extend(import_customParseFormat.default);
+import dayjs from "dayjs";
+import customParseFormat from "dayjs/plugin/customParseFormat";
+dayjs.extend(customParseFormat);
 var DateUtils = class {
   static isValidDateInput(input) {
-    return /^\d{2}\/\d{4}$/.test(input) && (0, import_dayjs.default)(input, "MM/YYYY", true).isValid();
+    return /^\d{2}\/\d{4}$/.test(input) && dayjs(input, "MM/YYYY", true).isValid();
   }
   static isValidTwoDate(from, to) {
     if (!this.isValidDateInput(from) || !this.isValidDateInput(to)) {
       return false;
     }
-    let startDate = (0, import_dayjs.default)(from, "MM/YYYY");
-    const endDate = (0, import_dayjs.default)(to, "MM/YYYY");
+    let startDate = dayjs(from, "MM/YYYY");
+    const endDate = dayjs(to, "MM/YYYY");
     if (startDate.isAfter(endDate)) {
       return false;
     }
     return true;
   }
   static stringFormatToDate(input) {
-    return (0, import_dayjs.default)(input, "MM/YYYY");
+    return dayjs(input, "MM/YYYY");
   }
 };
 var DateUtils_default = DateUtils;
 
 // src/modules/FacebookCleaner.ts
-var import_isSameOrBefore = __toESM(require("dayjs/plugin/isSameOrBefore"));
-import_dayjs2.default.extend(import_isSameOrBefore.default);
+import isSameOrBefore from "dayjs/plugin/isSameOrBefore";
+dayjs2.extend(isSameOrBefore);
 var FacebookCleaner = class {
   facebookRequest;
   constructor(cookies, requestOptions) {
@@ -1113,7 +1076,7 @@ var FacebookCleaner = class {
     const windows = [];
     const startDate = DateUtils_default.stringFormatToDate(fromDateValue);
     const endDate = DateUtils_default.stringFormatToDate(toDateValue);
-    for (let currentDate = startDate; currentDate.isSameOrBefore(endDate); currentDate = (0, import_dayjs2.default)(currentDate).add(1, "month")) {
+    for (let currentDate = startDate; currentDate.isSameOrBefore(endDate); currentDate = dayjs2(currentDate).add(1, "month")) {
       const month = currentDate.month() + 1;
       const year = currentDate.year();
       windows.push({
@@ -1442,29 +1405,29 @@ var FacebookCleaner = class {
 var FacebookCleaner_default = FacebookCleaner;
 
 // src/modules/FacebookStatistics.ts
-var import_path2 = __toESM(require("path"));
+import path2 from "path";
 
 // src/modules/utils/FileUtils.ts
-var import_path = __toESM(require("path"));
-var import_fs = __toESM(require("fs"));
-var import_fast_csv = require("fast-csv");
+import path from "path";
+import fs from "fs";
+import { parse, write } from "fast-csv";
 var FileUtils = class {
   static writeToFile = (absolutePath, content) => {
-    const dir = import_path.default.dirname(absolutePath);
-    if (!import_fs.default.existsSync(dir)) {
-      import_fs.default.mkdirSync(dir, { recursive: true });
+    const dir = path.dirname(absolutePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
     }
-    import_fs.default.writeFileSync(absolutePath, content);
+    fs.writeFileSync(absolutePath, content);
   };
   static readObjectFromJsonFile = (absolutePath) => {
-    if (!import_fs.default.existsSync(absolutePath)) {
+    if (!fs.existsSync(absolutePath)) {
       return null;
     }
-    return JSON.parse(import_fs.default.readFileSync(absolutePath, "utf-8"));
+    return JSON.parse(fs.readFileSync(absolutePath, "utf-8"));
   };
   static readCSV = (filePath) => new Promise((resolve, reject) => {
     const allData = [];
-    import_fs.default.createReadStream(filePath).pipe((0, import_fast_csv.parse)({ headers: true })).on("data", (row) => {
+    fs.createReadStream(filePath).pipe(parse({ headers: true })).on("data", (row) => {
       allData.push(row);
     }).on("end", () => {
       resolve(allData);
@@ -1473,15 +1436,15 @@ var FileUtils = class {
     });
   });
   static writeCSV = async (filePath, data, includeHeader = true) => {
-    if (!import_fs.default.existsSync(filePath)) {
-      const dir = import_path.default.dirname(filePath);
-      if (!import_fs.default.existsSync(dir)) {
-        import_fs.default.mkdirSync(dir, { recursive: true });
+    if (!fs.existsSync(filePath)) {
+      const dir = path.dirname(filePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
       }
     }
-    const writeStream = import_fs.default.createWriteStream(filePath);
+    const writeStream = fs.createWriteStream(filePath);
     return new Promise((resolve, reject) => {
-      (0, import_fast_csv.write)(data, { headers: includeHeader }).pipe(writeStream).on("finish", () => resolve(void 0)).on("error", reject);
+      write(data, { headers: includeHeader }).pipe(writeStream).on("finish", () => resolve(void 0)).on("error", reject);
     });
   };
 };
@@ -1524,10 +1487,10 @@ var FacebookStatistics = class {
     };
   };
   isValidSavedFilePath = (savedFilePath) => {
-    const normalizedPath = import_path2.default.normalize(savedFilePath);
+    const normalizedPath = path2.normalize(savedFilePath);
     const strippedDrivePrefix = normalizedPath.replace(/^[a-zA-Z]:/, "");
     const hasInvalidChars = /[<>:"|?*]/.test(strippedDrivePrefix);
-    const fileName = import_path2.default.basename(normalizedPath);
+    const fileName = path2.basename(normalizedPath);
     return !hasInvalidChars && fileName.length > 0 && fileName !== "." && fileName !== "..";
   };
   fetchAllByCursor = async ({
@@ -1631,8 +1594,7 @@ var FacebookStatistics = class {
   };
 };
 var FacebookStatistics_default = FacebookStatistics;
-// Annotate the CommonJS export names for ESM import in node:
-0 && (module.exports = {
-  FacebookCleaner,
-  FacebookStatistics
-});
+export {
+  FacebookCleaner_default as FacebookCleaner,
+  FacebookStatistics_default as FacebookStatistics
+};

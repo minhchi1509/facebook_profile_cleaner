@@ -19,7 +19,7 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "build": "bun esbuild.config.ts && bun run build:dts",
+    "build": "rm -rf dist && bun run esbuild.config.ts && bun run build:dts",
     "build:dts": "dts-bundle-generator -o dist/main.d.ts src/main.ts",
     "patch:publish": "npm version patch && npm publish --access public",
     "minor:publish": "npm version minor && npm publish --access public",
@@ -36,7 +36,8 @@
     "@fast-csv/parse": "^5.0.5",
     "axios": "^1.14.0",
     "dayjs": "^1.11.20",
-    "fast-csv": "^5.0.5"
+    "fast-csv": "^5.0.5",
+    "tslib": "^2.8.1"
   },
   "keywords": [
     "facebook",
