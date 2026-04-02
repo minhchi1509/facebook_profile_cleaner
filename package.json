@@ -1,7 +1,7 @@
 {
   "name": "@minhchi1509/facebook-profile-cleaner",
   "description": "Automate Facebook profile cleanup and statistics export (friends, followings, pages, groups, posts, reactions, comments).",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "main": "./dist/main.js",
   "module": "./dist/main.mjs",
   "types": "./dist/main.d.ts",
