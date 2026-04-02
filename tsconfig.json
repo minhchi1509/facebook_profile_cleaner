@@ -5,7 +5,7 @@
     "moduleResolution": "Node",
     "declaration": true,
     "allowJs": true,
-    "target": "ES2021",
+    "target": "esnext",
     "sourceMap": true,
     "outDir": "./dist",
     "noFallthroughCasesInSwitch": true,
@@ -15,8 +15,10 @@
     "removeComments": true,
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
+    "types": ["node"],
     "noUncheckedIndexedAccess": true,
     "forceConsistentCasingInFileNames": true,
+    "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
       "src/*": ["./src/*"]

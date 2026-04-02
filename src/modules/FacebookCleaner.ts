@@ -3,21 +3,22 @@ import {
   IGetListResponse,
   IRequestOptions,
 } from "src/interfaces/common.interface";
-import {
-  ICommentData,
-  IFollowing,
-  IFriend,
-  IJoinedGroups,
-  ILikedPages,
-  IPostData,
-  IProfileCredentials,
-  IProfileTabKey,
-  IReactionData,
-  ISentFriendRequest,
-} from "src/interfaces/model.interface";
+
 import FacebookRequest from "src/modules/FacebookRequest";
 import DateUtils from "src/modules/utils/DateUtils";
 import isSameOrBefore from "dayjs/plugin/isSameOrBefore";
+import {
+  IProfileCredentials,
+  IProfileTabKey,
+  IFriend,
+  ILikedPages,
+  IJoinedGroups,
+  IFollowing,
+  ISentFriendRequest,
+  IPostData,
+  IReactionData,
+  ICommentData,
+} from "src/interfaces/model.interface";
 
 dayjs.extend(isSameOrBefore);
 

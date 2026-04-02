@@ -1,10 +1,23 @@
 {
   "name": "@minhchi1509/facebook-profile-cleaner",
-  "description": "Clean your Facebook profile by removing all posts, comments, likes, and reactions, following, sent friend requests, and more...",
+  "description": "Automate Facebook profile cleanup and statistics export (friends, followings, pages, groups, posts, reactions, comments).",
   "version": "1.0.1",
   "main": "./dist/main.js",
   "module": "./dist/main.mjs",
   "types": "./dist/main.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/main.d.ts",
+      "import": "./dist/main.mjs",
+      "require": "./dist/main.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "build": "tsup",
     "publish:patch": "npm run build && npm version patch && npm publish --access public",
@@ -12,6 +25,7 @@
     "publish:major": "npm run build && npm version major && npm publish --access public"
   },
   "devDependencies": {
+    "@types/node": "^25.5.0",
     "tsc-alias": "^1.8.16",
     "tsup": "^8.5.1",
     "typescript": "^6.0.2"
@@ -19,7 +33,6 @@
   "dependencies": {
     "@fast-csv/format": "^5.0.5",
     "@fast-csv/parse": "^5.0.5",
-    "@types/node": "^25.5.0",
     "axios": "^1.14.0",
     "dayjs": "^1.11.20",
     "fast-csv": "^5.0.5",
@@ -27,12 +40,23 @@
   },
   "keywords": [
     "facebook",
-    "facebook-profile-cleaner"
+    "facebook-profile-cleaner",
+    "automation",
+    "cleanup",
+    "privacy",
+    "batch-processing",
+    "mass-delete",
+    "friends-management",
+    "posts-management"
   ],
   "author": "minhchi1509",
   "license": "MIT",
   "repository": {
-    "url": "https://github.com/minhchi1509/facebook_profile_cleaner"
+    "type": "git",
+    "url": "https://github.com/minhchi1509/facebook_profile_cleaner.git"
+  },
+  "bugs": {
+    "url": "https://github.com/minhchi1509/facebook_profile_cleaner/issues"
   },
   "homepage": "https://github.com/minhchi1509/facebook_profile_cleaner"
 }
