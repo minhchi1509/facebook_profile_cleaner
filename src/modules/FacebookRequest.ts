@@ -20,7 +20,7 @@ import ObjectUtils from "src/modules/utils/ObjectUtils";
 
 class FacebookRequest {
   private axiosInstance: AxiosInstance;
-  private requestOptions: IRequestOptions;
+  private requestOptions: Required<IRequestOptions>;
 
   constructor(cookies: string, requestOptions?: IRequestOptions) {
     this.axiosInstance = axios.create({
@@ -30,11 +30,99 @@ class FacebookRequest {
         "Content-Type": "application/x-www-form-urlencoded",
       },
     });
+
+    const retryCount = Number.isFinite(requestOptions?.retryCount)
+      ? Math.max(0, Math.floor(requestOptions?.retryCount || 0))
+      : 5;
+    const retryDelayInMs = Number.isFinite(requestOptions?.retryDelayInMs)
+      ? Math.max(0, Math.floor(requestOptions?.retryDelayInMs || 0))
+      : 1000;
+
     this.requestOptions = {
-      retryCount: requestOptions?.retryCount ?? 5,
-      retryDelayInMs: requestOptions?.retryDelayInMs ?? 1000,
+      retryCount,
+      retryDelayInMs,
     };
+    this.bindRetryableMethods();
   }
+
+  private delay = async (ms: number) => {
+    if (ms <= 0) {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  };
+
+  private executeWithRetry = async <T>({
+    action,
+    actionName,
+  }: {
+    action: () => Promise<T>;
+    actionName: string;
+  }): Promise<T> => {
+    const maxRetries = this.requestOptions.retryCount;
+    const delayBetweenRetries = this.requestOptions.retryDelayInMs;
+
+    try {
+      for (let attempt = 0; attempt < maxRetries; attempt += 1) {
+        try {
+          return await action();
+        } catch (error) {
+          const hasNextAttempt = attempt < maxRetries;
+          if (!hasNextAttempt) {
+            throw error;
+          }
+
+          console.warn(
+            `⚠️ ${actionName} failed (attempt ${attempt + 1}/${maxRetries}). Retrying in ${delayBetweenRetries}ms...`,
+          );
+          await this.delay(delayBetweenRetries);
+        }
+      }
+
+      throw new Error(`❌ ${actionName} failed after ${maxRetries} attempts.`);
+    } finally {
+    }
+  };
+
+  private bindRetryableMethods = () => {
+    const retryableMethods: readonly (keyof this)[] = [
+      "getProfileCredentials",
+      "getProfileTabKey",
+      "getFollowedPages",
+      "getFriends",
+      "getFollowing",
+      "getJoinedGroups",
+      "getSentFriendRequests",
+      "getPostsData",
+      "getReactionData",
+      "getCommentData",
+      "unfriend",
+      "unfollowPage",
+      "leaveGroup",
+      "unfollowUserOrPage",
+      "cancelSentFriendRequest",
+      "deletePost",
+      "changePostPrivacy",
+      "deleteReaction",
+      "deleteComment",
+    ] as const;
+
+    for (const methodName of retryableMethods) {
+      const originalMethod = this[methodName];
+
+      if (typeof originalMethod !== "function") continue;
+
+      const boundMethod = originalMethod.bind(this);
+
+      this[methodName] = (async (...args: unknown[]) => {
+        return this.executeWithRetry({
+          action: () => boundMethod(...args),
+          actionName: methodName as string,
+        });
+      }) as this[typeof methodName];
+    }
+  };
 
   getProfileCredentials = async () => {
     try {

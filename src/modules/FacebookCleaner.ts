@@ -1,5 +1,8 @@
 import dayjs from "dayjs";
-import { IGetListResponse } from "src/interfaces/common.interface";
+import {
+  IGetListResponse,
+  IRequestOptions,
+} from "src/interfaces/common.interface";
 import {
   ICommentData,
   IFollowing,
@@ -39,8 +42,8 @@ interface IDateWindow {
 class FacebookCleaner {
   private facebookRequest: FacebookRequest;
 
-  constructor(cookies: string) {
-    this.facebookRequest = new FacebookRequest(cookies);
+  constructor(cookies: string, requestOptions?: IRequestOptions) {
+    this.facebookRequest = new FacebookRequest(cookies, requestOptions);
   }
 
   private normalizeCleanerOptions = (
